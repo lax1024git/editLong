@@ -53,7 +53,7 @@ npm install
 npm run dist
 ```
 
-产物在 `dist/EditLong-Setup-1.0.0-x64.exe`。录屏依赖 ffmpeg，安装包体积会比较大。仅解包目录、不生成安装程序时用 `npm run dist:dir`。
+产物在 `dist/EditLong-Setup-1.0.0-x64.exe`。录屏依赖 ffmpeg，安装包体积会比较大。仅解包目录、不生成安装程序时用 `npm run dist:dir`。`dist/` 和 `.exe` 已加入 `.gitignore`，不要提交到 GitHub（超过仓库文件大小限制）。
 
 ## 界面
 
