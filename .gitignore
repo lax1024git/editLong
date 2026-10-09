@@ -1,7 +1,6 @@
 node_modules/
 dist/
 out/
-*.exe
 *.blockmap
 *.log
 .DS_Store
