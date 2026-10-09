@@ -17,6 +17,12 @@ body {
   color: #eee;
   -webkit-app-region: drag;
   user-select: none;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+#bar > * {
+  flex-shrink: 0;
 }
 
 #bar button,
@@ -58,6 +64,7 @@ body {
   margin-left: auto;
   width: 24px;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .grip {

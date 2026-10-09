@@ -14,7 +14,12 @@ contextBridge.exposeInMainWorld("editlong", {
   offsetToLine: (offset) => ipcRenderer.invoke("file:offset-to-line", offset),
   setMode: (mode) => ipcRenderer.invoke("ui:set-mode", mode),
   newFile: () => ipcRenderer.invoke("file:new"),
-  closeFile: () => ipcRenderer.invoke("file:close"),
+  closeFile: (id) => ipcRenderer.invoke("file:close", id),
+  activateTab: (id) => ipcRenderer.invoke("tabs:activate", id),
+  closeAllTabs: () => ipcRenderer.invoke("tabs:close-all"),
+  onTabsChanged: (cb) => {
+    ipcRenderer.on("tabs-changed", (_e, data) => cb(data));
+  },
   onFileOpened: (cb) => {
     ipcRenderer.on("file-opened", (_e, meta) => cb(meta));
   },

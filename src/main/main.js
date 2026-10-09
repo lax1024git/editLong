@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
 const fs = require("fs");
 const path = require("path");
-const { FileSession, ENCODINGS } = require("./fileSession");
+const { ENCODINGS } = require("./fileSession");
+const { TabWorkspace } = require("./tabs");
 const { registerToolboxIpc } = require("./toolbox");
 const { registerScreenshot } = require("./screenshot");
 const { registerRecorder } = require("./recorder");
@@ -9,8 +10,7 @@ const { registerRecorder } = require("./recorder");
 let screenshotApi = null;
 
 let win;
-const session = new FileSession();
-let indexJob = 0;
+const workspace = new TabWorkspace();
 
 const LANGUAGES = [
   { id: "plaintext", label: "纯文本" },
@@ -69,24 +69,6 @@ function encodingList() {
   return Object.entries(ENCODINGS).map(([id, v]) => ({ id, label: v.label }));
 }
 
-function untitledMeta() {
-  return {
-    path: null,
-    untitled: true,
-    size: 0,
-    encoding: menuState.encoding,
-    encodingLabel: ENCODINGS[menuState.encoding]?.label || "UTF-8",
-    bom: 0,
-    editable: true,
-    indexDone: true,
-    totalLines: 1,
-    encodings: encodingList(),
-    language: menuState.language,
-    wrap: menuState.wrap,
-    mode: menuState.mode,
-  };
-}
-
 function emptyMeta() {
   return {
     path: null,
@@ -97,7 +79,68 @@ function emptyMeta() {
     language: menuState.language,
     wrap: menuState.wrap,
     mode: menuState.mode,
+    tabId: null,
   };
+}
+
+function tabDefaults() {
+  return {
+    encoding: menuState.encoding,
+    language: menuState.language,
+    wrap: menuState.wrap,
+    mode: menuState.mode || "text",
+  };
+}
+
+function syncMenuFromTab(tab) {
+  if (!tab) return;
+  menuState.encoding = tab.session.encoding || menuState.encoding;
+  menuState.language = tab.language;
+  menuState.wrap = tab.wrap;
+  menuState.mode = tab.mode;
+  buildMenu();
+}
+
+function emitTabs() {
+  send("tabs-changed", workspace.list());
+}
+
+function emitOpened(tab) {
+  if (!tab) {
+    send("file-opened", emptyMeta());
+    emitTabs();
+    return;
+  }
+  const meta = workspace.snapshot(tab);
+  send("file-opened", { ...meta, tabId: tab.id });
+  emitTabs();
+}
+
+function startIndex(tab) {
+  if (!tab || tab.untitled || !tab.session.path) return;
+  tab.indexJob += 1;
+  const job = tab.indexJob;
+  const id = tab.id;
+  tab.session
+    .buildIndex((progress) => {
+      if (tab.indexJob !== job) return;
+      if (workspace.activeId === id) {
+        send("index-progress", { ...workspace.snapshot(tab), ...progress, tabId: id });
+      }
+    })
+    .then((done) => {
+      if (tab.indexJob !== job) return;
+      if (workspace.activeId === id) {
+        send("index-progress", { ...workspace.snapshot(tab), ...done, tabId: id });
+      } else {
+        emitTabs();
+      }
+    })
+    .catch((err) => {
+      if (tab.indexJob === job && workspace.activeId === id) {
+        send("app-error", String(err.message || err));
+      }
+    });
 }
 
 function createWindow() {
@@ -137,10 +180,12 @@ function currentWindow() {
 async function pickOpen() {
   const result = await dialog.showOpenDialog(currentWindow(), {
     title: "打开",
-    properties: ["openFile"],
+    properties: ["openFile", "multiSelections"],
   });
-  if (result.canceled || !result.filePaths[0]) return;
-  await openPath(result.filePaths[0]);
+  if (result.canceled || !result.filePaths.length) return;
+  for (const filePath of result.filePaths) {
+    await openPath(filePath);
+  }
 }
 
 async function pickSave(defaultPath) {
@@ -153,61 +198,47 @@ async function pickSave(defaultPath) {
 }
 
 async function openPath(filePath) {
-  indexJob += 1;
-  const job = indexJob;
-  const meta = await session.open(filePath);
-  menuState.encoding = meta.encoding;
+  const { tab, reused } = await workspace.createFromPath(filePath, tabDefaults());
   addRecent(filePath);
-  send("file-opened", { ...meta, language: menuState.language, wrap: menuState.wrap, mode: menuState.mode });
-  session
-    .buildIndex((progress) => {
-      if (job === indexJob) {
-        send("index-progress", {
-          ...progress,
-          language: menuState.language,
-          wrap: menuState.wrap,
-          mode: menuState.mode,
-        });
-      }
-    })
-    .then((done) => {
-      if (job === indexJob) {
-        send("index-progress", {
-          ...done,
-          language: menuState.language,
-          wrap: menuState.wrap,
-          mode: menuState.mode,
-        });
-      }
-    })
-    .catch((err) => {
-      if (job === indexJob) send("app-error", String(err.message || err));
-    });
+  syncMenuFromTab(tab);
+  emitOpened(tab);
+  if (!reused) startIndex(tab);
 }
 
 async function newFile() {
-  indexJob += 1;
-  await session.close();
-  session.encoding = menuState.encoding;
-  send("file-opened", untitledMeta());
+  const tab = workspace.createUntitled(tabDefaults());
+  syncMenuFromTab(tab);
+  emitOpened(tab);
+}
+
+async function closeTab(id) {
+  const target = id || workspace.activeId;
+  if (!target) return workspace.list();
+  const next = await workspace.close(target);
+  if (next) syncMenuFromTab(next);
+  else buildMenu();
+  emitOpened(next);
+  return workspace.list();
 }
 
 async function closeFile() {
-  indexJob += 1;
-  await session.close();
-  send("file-opened", emptyMeta());
+  await closeTab(workspace.activeId);
+}
+
+async function activateTab(id) {
+  const tab = workspace.activate(id);
+  if (!tab) return null;
+  syncMenuFromTab(tab);
+  emitOpened(tab);
+  return workspace.snapshot(tab);
 }
 
 function applyEncoding(encoding) {
   menuState.encoding = encoding;
-  const meta = session.setEncoding(encoding);
-  if (session.path) {
-    send("encoding-changed", {
-      ...meta,
-      language: menuState.language,
-      wrap: menuState.wrap,
-      mode: menuState.mode,
-    });
+  const tab = workspace.active();
+  if (tab) {
+    const meta = tab.session.setEncoding(encoding);
+    send("encoding-changed", { ...workspace.snapshot(tab), ...meta, tabId: tab.id });
   }
   buildMenu();
 }
@@ -236,7 +267,8 @@ function buildMenu() {
           click: () => send("menu", "save-as"),
         },
         { type: "separator" },
-        { label: "关闭(&C)", accelerator: "CmdOrCtrl+W", click: () => closeFile() },
+        { label: "关闭(&C)", accelerator: "CmdOrCtrl+W", click: () => send("menu", "close") },
+        { label: "关闭全部", click: () => send("menu", "close-all") },
         { type: "separator" },
         { label: "退出(&X)", role: "quit" },
       ],
@@ -290,7 +322,10 @@ function buildMenu() {
           checked: menuState.language === lang.id,
           click: () => {
             menuState.language = lang.id;
+            const tab = workspace.active();
+            if (tab) tab.language = lang.id;
             send("menu", "language:" + lang.id);
+            emitTabs();
             buildMenu();
           },
         };
@@ -307,7 +342,10 @@ function buildMenu() {
           checked: menuState.wrap,
           click: (item) => {
             menuState.wrap = item.checked;
+            const tab = workspace.active();
+            if (tab) tab.wrap = item.checked;
             send("menu", menuState.wrap ? "wrap-on" : "wrap-off");
+            emitTabs();
           },
         },
         {
@@ -362,7 +400,10 @@ function buildMenu() {
           accelerator: "CmdOrCtrl+1",
           click: () => {
             menuState.mode = "text";
+            const tab = workspace.active();
+            if (tab) tab.mode = "text";
             send("menu", "view-text");
+            emitTabs();
             buildMenu();
           },
         },
@@ -373,7 +414,10 @@ function buildMenu() {
           accelerator: "CmdOrCtrl+2",
           click: () => {
             menuState.mode = "hex";
+            const tab = workspace.active();
+            if (tab) tab.mode = "hex";
             send("menu", "view-hex");
+            emitTabs();
             buildMenu();
           },
         },
@@ -395,49 +439,65 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+function requireActive() {
+  const tab = workspace.active();
+  if (!tab) throw new Error("未打开文件");
+  return tab;
+}
+
 ipcMain.handle("dialog:open", () => pickOpen());
-ipcMain.handle("file:meta", () => session.meta());
+ipcMain.handle("file:meta", () => {
+  const tab = workspace.active();
+  return tab ? workspace.snapshot(tab) : emptyMeta();
+});
 ipcMain.handle("file:set-encoding", (_e, encoding) => {
   menuState.encoding = encoding;
-  const meta = session.setEncoding(encoding);
+  const tab = requireActive();
+  const meta = tab.session.setEncoding(encoding);
   buildMenu();
-  return meta;
+  emitTabs();
+  return { ...workspace.snapshot(tab), ...meta, tabId: tab.id };
 });
 ipcMain.handle("file:read-lines", (_e, startLine, count) =>
-  session.readLines(startLine, count)
+  requireActive().session.readLines(startLine, count)
 );
 ipcMain.handle("file:read-bytes", async (_e, offset, length) => {
-  const buf = await session.readBytes(offset, length);
+  const buf = await requireActive().session.readBytes(offset, length);
   return { offset, bytes: Array.from(buf) };
 });
-ipcMain.handle("file:read-text", () => session.readText());
-ipcMain.handle("file:find", (_e, opts) => session.findNext(opts));
+ipcMain.handle("file:read-text", () => requireActive().session.readText());
+ipcMain.handle("file:find", (_e, opts) => requireActive().session.findNext(opts));
 ipcMain.handle("file:save-text", async (_e, { text, saveAs }) => {
-  let target = session.path;
+  const tab = requireActive();
+  let target = tab.session.path;
   if (saveAs || !target) {
-    target = await pickSave(target || "未命名.txt");
+    target = await pickSave(target || tab.title + ".txt");
     if (!target) return { cancelled: true };
   }
-  const meta = await session.saveText(target, text);
+  const meta = await tab.session.saveText(target, text);
+  workspace.markSaved(tab);
   addRecent(target);
-  indexJob += 1;
-  const job = indexJob;
-  session
-    .buildIndex((progress) => {
-      if (job === indexJob) send("index-progress", progress);
-    })
-    .then((done) => {
-      if (job === indexJob) send("index-progress", done);
-    });
-  return { cancelled: false, meta };
+  startIndex(tab);
+  emitTabs();
+  return { cancelled: false, meta: { ...workspace.snapshot(tab), ...meta, tabId: tab.id } };
 });
-ipcMain.handle("file:offset-to-line", (_e, offset) => session.offsetToLine(offset));
+ipcMain.handle("file:offset-to-line", (_e, offset) => requireActive().session.offsetToLine(offset));
 registerToolboxIpc(ipcMain, () => currentWindow());
 ipcMain.handle("file:new", () => newFile());
-ipcMain.handle("file:close", () => closeFile());
+ipcMain.handle("file:close", (_e, id) => closeTab(id));
+ipcMain.handle("tabs:activate", (_e, id) => activateTab(id));
+ipcMain.handle("tabs:close-all", async () => {
+  await workspace.closeAll();
+  buildMenu();
+  emitOpened(null);
+  return workspace.list();
+});
 ipcMain.handle("ui:set-mode", (_e, mode) => {
   menuState.mode = mode === "hex" ? "hex" : "text";
+  const tab = workspace.active();
+  if (tab) tab.mode = menuState.mode;
   buildMenu();
+  emitTabs();
 });
 
 app.whenReady().then(() => {
@@ -453,10 +513,10 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", async () => {
-  await session.close();
+  await workspace.closeAll();
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("before-quit", async () => {
-  await session.close();
+  await workspace.closeAll();
 });

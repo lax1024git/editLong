@@ -53,7 +53,7 @@ npm install
 npm run dist
 ```
 
-产物在 `dist/EditLong-Setup-1.0.0-x64.exe`。录屏依赖 ffmpeg，安装包体积会比较大。仅解包目录、不生成安装程序时用 `npm run dist:dir`。`dist/` 和 `.exe` 已加入 `.gitignore`，不要提交到 GitHub（超过仓库文件大小限制）。
+产物在 `dist/EditLong-Setup-1.1.0-x64.exe`。录屏依赖 ffmpeg，安装包体积会比较大。仅解包目录、不生成安装程序时用 `npm run dist:dir`。`dist/` 和 `.exe` 已加入 `.gitignore`，不要提交到 GitHub（超过仓库文件大小限制）。
 
 ## 界面
 
@@ -70,6 +70,8 @@ npm run dist
 | 工具 | 快捷工具箱、区域截图、区域录屏 |
 | 窗口 | 文本 / 二进制视图 |
 
+工具栏下方是文件标签栏：每个打开的文件占一个标签，未保存的会显示 `*`。点击切换，点 × 或中键关闭。打开对话框支持多选。关闭最后一个标签后回到欢迎页。
+
 状态栏显示路径、行列、字节偏移、大小、语言和当前窗口类型。超过 16MB 打开后为只读浏览，文本窗口用虚拟列表而不是可编辑框。
 
 ## 快捷键
@@ -79,7 +81,8 @@ npm run dist
 | 新建 | Ctrl+N |
 | 打开 | Ctrl+O |
 | 保存 / 另存为 | Ctrl+S / Ctrl+Shift+S |
-| 关闭 | Ctrl+W |
+| 关闭当前标签 | Ctrl+W |
+| 切换标签 | Ctrl+Tab / Ctrl+Shift+Tab |
 | 查找 | Ctrl+F |
 | 查找下一个 / 上一个 | F3 / Shift+F3 |
 | 转到行号或 `0x` 偏移 | Ctrl+G |

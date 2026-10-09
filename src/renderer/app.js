@@ -2,6 +2,7 @@ const api = window.editlong;
 
 const state = {
   meta: null,
+  tabId: null,
   mode: "text",
   firstLine: 0,
   firstRow: 0,
@@ -12,7 +13,11 @@ const state = {
   dragging: false,
   language: "plaintext",
   wrap: false,
+  viewReady: false,
 };
+
+const tabViews = new Map();
+let tabList = [];
 
 const ui = {
   welcome: document.getElementById("welcome"),
@@ -40,6 +45,8 @@ const ui = {
   stSize: document.getElementById("st-size"),
   stMode: document.getElementById("st-mode"),
   stLang: document.getElementById("st-lang"),
+  tabbar: document.getElementById("tabbar"),
+  tabstrip: document.getElementById("tabstrip"),
 };
 
 const LANG_LABELS = {
@@ -114,16 +121,18 @@ function applyMeta(meta) {
     });
   }
   if (meta.encoding) ui.encoding.value = meta.encoding;
-  const name = meta.untitled
-    ? "未命名"
-    : meta.path
-      ? meta.path.split(/[\\/]/).pop()
-      : "未打开文件";
-  document.title = hasDoc() ? name + " - EditLong" : "EditLong";
+  const name = meta.title
+    ? meta.title
+    : meta.untitled
+      ? "未命名"
+      : meta.path
+        ? meta.path.split(/[\\/]/).pop()
+        : "未打开文件";
+  document.title = hasDoc() ? (state.dirty ? "*" : "") + name + " - EditLong" : "EditLong";
   ui.stFile.textContent = meta.path
     ? name + (meta.indexDone ? "" : "（正在建立行索引…）")
     : meta.untitled
-      ? "未命名"
+      ? name
       : "未打开文件";
   ui.stSize.textContent = meta.path ? formatSize(meta.size) : "";
   ui.stLang.textContent = LANG_LABELS[state.language] || "纯文本";
@@ -153,25 +162,162 @@ async function openFile() {
   await api.openDialog();
 }
 
+function saveCurrentView() {
+  if (!state.tabId) return;
+  tabViews.set(state.tabId, {
+    editorValue: ui.editor.value,
+    dirty: state.dirty,
+    firstLine: state.firstLine,
+    firstRow: state.firstRow,
+    mode: state.mode,
+    language: state.language,
+    wrap: state.wrap,
+    match: state.match,
+    selStart: ui.editor.selectionStart || 0,
+    selEnd: ui.editor.selectionEnd || 0,
+  });
+}
+
+function tabIsDirty(id) {
+  if (id === state.tabId) return state.dirty;
+  return Boolean(tabViews.get(id)?.dirty);
+}
+
+function paintTabs() {
+  if (!ui.tabbar || !ui.tabstrip) return;
+  ui.tabbar.classList.toggle("hidden", tabList.length === 0);
+  ui.tabstrip.replaceChildren();
+  tabList.forEach((tab) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "tab" + (tab.id === state.tabId || tab.active ? " active" : "");
+    el.title = tab.path || tab.title;
+    const title = document.createElement("span");
+    title.className = "tab-title";
+    title.textContent = (tabIsDirty(tab.id) ? "* " : "") + tab.title;
+    const close = document.createElement("span");
+    close.className = "tab-close";
+    close.title = "关闭";
+    close.textContent = "×";
+    el.append(title, close);
+    el.addEventListener("click", (e) => {
+      if (e.target === close) return;
+      switchTab(tab.id);
+    });
+    close.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      requestClose(tab.id);
+    });
+    el.addEventListener("auxclick", (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        requestClose(tab.id);
+      }
+    });
+    ui.tabstrip.appendChild(el);
+  });
+  const activeEl = ui.tabstrip.querySelector(".tab.active");
+  if (activeEl) activeEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+async function switchTab(id) {
+  if (!id || id === state.tabId) return;
+  saveCurrentView();
+  await api.activateTab(id);
+}
+
+async function requestClose(id) {
+  if (!id) return;
+  if (tabIsDirty(id) && !window.confirm("此标签有未保存的修改，确定关闭？")) return;
+  if (id === state.tabId) saveCurrentView();
+  tabViews.delete(id);
+  await api.closeFile(id);
+}
+
+async function requestCloseAll() {
+  const dirty = tabList.some((t) => tabIsDirty(t.id));
+  if (dirty && !window.confirm("有未保存的修改，确定关闭全部标签？")) return;
+  saveCurrentView();
+  tabViews.clear();
+  await api.closeAllTabs();
+}
+
+function cycleTab(reverse) {
+  if (tabList.length < 2) return;
+  const ids = tabList.map((t) => t.id);
+  const i = Math.max(0, ids.indexOf(state.tabId));
+  const next = reverse ? ids[(i - 1 + ids.length) % ids.length] : ids[(i + 1) % ids.length];
+  switchTab(next);
+}
+
 async function onOpened(meta) {
+  if (state.tabId && meta.tabId && state.tabId !== meta.tabId && state.viewReady) {
+    saveCurrentView();
+  }
+  const cached = meta.tabId ? tabViews.get(meta.tabId) : null;
+  state.tabId = meta.tabId || null;
+  state.viewReady = false;
+  if (!meta.path && !meta.untitled) {
+    state.meta = meta;
+    state.dirty = false;
+    state.match = null;
+    ui.editor.value = "";
+    showPanes();
+    paintTabs();
+    document.title = "EditLong";
+    state.viewReady = true;
+    return;
+  }
+  if (cached) {
+    state.dirty = cached.dirty;
+    state.firstLine = cached.firstLine;
+    state.firstRow = cached.firstRow;
+    state.mode = cached.mode;
+    state.language = cached.language;
+    state.match = cached.match;
+    applyWrap(cached.wrap);
+    applyMeta(meta);
+    showPanes();
+    if (meta.untitled || (meta.editable && state.mode === "text")) {
+      ui.editor.value = cached.editorValue || "";
+      const a = cached.selStart || 0;
+      const b = cached.selEnd || 0;
+      ui.editor.setSelectionRange(a, b);
+    }
+    await render();
+    paintTabs();
+    state.viewReady = true;
+    return;
+  }
   state.dirty = false;
   state.firstLine = 0;
   state.firstRow = 0;
   state.match = null;
+  if (meta.mode) state.mode = meta.mode;
   applyMeta(meta);
   showPanes();
   if (meta.untitled) {
     ui.editor.value = "";
     ui.editor.focus();
     updateEditStatus();
+    saveCurrentView();
+    paintTabs();
+    state.viewReady = true;
     return;
   }
   if (!meta.path) return;
   if (meta.editable && state.mode === "text") {
-    ui.editor.value = await api.readText();
+    const text = await api.readText();
+    if (state.tabId !== meta.tabId) return;
+    ui.editor.value = text;
     ui.editor.focus();
   }
+  if (state.tabId !== meta.tabId) return;
   await render();
+  saveCurrentView();
+  paintTabs();
+  state.viewReady = true;
 }
 
 async function render() {
@@ -259,6 +405,10 @@ function updateEditStatus() {
   const col = pos - before.lastIndexOf("\n");
   ui.stPos.textContent = "Ln " + line + ", Col " + col;
   ui.stOff.textContent = state.dirty ? "未保存" : "已保存";
+  if (state.meta) {
+    const name = state.meta.title || (state.meta.untitled ? "未命名" : state.meta.path ? state.meta.path.split(/[\\/]/).pop() : "EditLong");
+    document.title = (state.dirty ? "*" : "") + name + " - EditLong";
+  }
 }
 
 function updateThumb() {
@@ -313,7 +463,9 @@ async function save(saveAs) {
   if (!result.cancelled) {
     state.dirty = false;
     applyMeta(result.meta);
+    saveCurrentView();
     updateEditStatus();
+    paintTabs();
   }
 }
 
@@ -567,7 +719,7 @@ document.getElementById("btn-new").onclick = () => api.newFile();
 document.getElementById("btn-open").onclick = openFile;
 document.getElementById("btn-save").onclick = () => save(false);
 document.getElementById("btn-save-as").onclick = () => save(true);
-document.getElementById("btn-close").onclick = () => api.closeFile();
+document.getElementById("btn-close").onclick = () => requestClose(state.tabId);
 document.getElementById("btn-cut").onclick = () => editCmd("cut");
 document.getElementById("btn-copy").onclick = () => editCmd("copy");
 document.getElementById("btn-paste").onclick = () => editCmd("paste");
@@ -598,6 +750,7 @@ ui.encoding.onchange = async () => {
 ui.editor.addEventListener("input", () => {
   state.dirty = true;
   updateEditStatus();
+  paintTabs();
 });
 ui.editor.addEventListener("keyup", updateEditStatus);
 ui.editor.addEventListener("click", updateEditStatus);
@@ -621,6 +774,11 @@ ui.vscroll.addEventListener("pointerdown", (e) => {
 });
 
 window.addEventListener("keydown", (e) => {
+  if (e.ctrlKey && e.key === "Tab") {
+    e.preventDefault();
+    cycleTab(e.shiftKey);
+    return;
+  }
   if (!hasDoc() || !state.meta.path) return;
   if (state.mode === "text" && state.meta.editable) return;
   if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"].includes(e.key) &&
@@ -638,9 +796,23 @@ window.addEventListener("keydown", (e) => {
 });
 
 window.addEventListener("resize", () => render());
+if (ui.tabstrip) {
+  ui.tabstrip.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      ui.tabstrip.scrollLeft += e.deltaY;
+      e.preventDefault();
+    }
+  }, { passive: false });
+}
 
 api.onFileOpened(onOpened);
+api.onTabsChanged((data) => {
+  tabList = data && Array.isArray(data.tabs) ? data.tabs : [];
+  if (data && data.activeId) state.tabId = data.activeId;
+  paintTabs();
+});
 api.onIndexProgress((meta) => {
+  if (meta.tabId && state.tabId && meta.tabId !== state.tabId) return;
   applyMeta(meta);
   if (state.mode === "text" && !meta.editable) render();
 });
@@ -662,6 +834,8 @@ api.onMenu((name) => {
     state.language = name.slice("language:".length);
     if (ui.stLang) ui.stLang.textContent = LANG_LABELS[state.language] || "纯文本";
   }
+  if (name === "close") requestClose(state.tabId);
+  if (name === "close-all") requestCloseAll();
   if (name === "snip-hotkey") showHotkeyBox();
   if (name === "record") api.startRecord();
   if (name === "toolbox") window.dispatchEvent(new CustomEvent("editlong-toolbox"));
@@ -675,6 +849,7 @@ api.onMenu((name) => {
   }
 });
 api.onEncodingChanged(async (meta) => {
+  if (meta.tabId && state.tabId && meta.tabId !== state.tabId) return;
   applyMeta(meta);
   if (meta.editable && state.mode === "text" && meta.path) {
     ui.editor.value = await api.readText();

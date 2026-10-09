@@ -137,7 +137,7 @@ class FileSession {
       encoding: this.encoding,
       encodingLabel: enc.label,
       bom: this.bom,
-      editable: this.size > 0 && this.size <= EDIT_LIMIT,
+      editable: this.size <= EDIT_LIMIT,
       indexDone: this.index.done,
       totalLines: this.index.totalLines,
       indexedOffset: this.index.indexedOffset,

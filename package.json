@@ -1,6 +1,6 @@
 {
   "name": "editlong",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "面向大文件浏览的记事本式编辑器，支持十六进制、截图和录屏",
   "main": "src/main/main.js",
   "author": "EditLong",

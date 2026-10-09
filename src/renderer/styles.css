@@ -46,6 +46,73 @@ body {
   background: linear-gradient(#f7f7f7, #ececec);
 }
 
+.tabbar {
+  height: 28px;
+  background: #e4e4e4;
+  border-bottom: 1px solid #c3c3c3;
+  flex-shrink: 0;
+}
+
+#tabstrip {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#tabstrip::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tab {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  height: 100%;
+  padding: 0 6px 0 12px;
+  border: 0;
+  border-right: 1px solid #cfcfcf;
+  background: #dcdcdc;
+  color: #333;
+  font: 12px/1 var(--font-ui);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tab:hover {
+  background: #e8e8e8;
+}
+
+.tab.active {
+  background: #fff;
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.tab-close {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 14px;
+  text-align: center;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.tab-close:hover {
+  background: #e53935;
+  color: #fff;
+}
+
 .find-bar {
   background: #fff;
 }

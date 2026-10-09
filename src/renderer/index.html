@@ -146,6 +146,10 @@
       </label>
     </header>
 
+    <nav id="tabbar" class="tabbar hidden" aria-label="打开的文件">
+      <div id="tabstrip"></div>
+    </nav>
+
     <section id="find-bar" class="find-bar hidden">
       <input id="find-input" type="text" placeholder="查找内容或十六进制字节" />
       <label><input id="find-hex" type="checkbox" /> 十六进制</label>
@@ -167,7 +171,7 @@
         <h1>EditLong</h1>
         <p>类似记事本的大文件编辑器：按窗口读取，不把整个文件装进内存。</p>
         <ul>
-          <li>Ctrl+O 打开文本或二进制文件</li>
+          <li>Ctrl+O 打开文本或二进制文件（可多选，每个文件一个标签）</li>
           <li>Ctrl+2 切换十六进制窗口</li>
           <li>Ctrl+F 搜索文本或字节序列</li>
         </ul>

@@ -15,6 +15,8 @@ const { execFileSync } = require("child_process");
 const { pathToFileURL } = require("url");
 
 const TOOLBAR = 32;
+const PIN_MIN_WIDTH = 660;
+const PIN_MIN_HEIGHT = TOOLBAR + 48;
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+A";
 
 let snipping = false;
@@ -225,8 +227,10 @@ function cropFrame(image, display, rect) {
 
 function createPin(image, screenX, screenY, dipW, dipH) {
   const pin = new BrowserWindow({
-    width: Math.max(420, Math.round(dipW)),
-    height: Math.max(80, Math.round(dipH) + TOOLBAR),
+    width: Math.max(PIN_MIN_WIDTH, Math.round(dipW)),
+    height: Math.max(PIN_MIN_HEIGHT, Math.round(dipH) + TOOLBAR),
+    minWidth: PIN_MIN_WIDTH,
+    minHeight: PIN_MIN_HEIGHT,
     x: Math.round(screenX),
     y: Math.round(screenY),
     frame: false,
@@ -246,6 +250,7 @@ function createPin(image, screenX, screenY, dipW, dipH) {
       sandbox: true,
     },
   });
+  pin.setMinimumSize(PIN_MIN_WIDTH, PIN_MIN_HEIGHT);
   pin.setAlwaysOnTop(true, "screen-saver");
   pin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   pin.webContents.on("zoom-changed", (_e, direction) => {
