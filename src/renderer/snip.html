@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: file: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>选择截图区域</title>
+    <link rel="stylesheet" href="snip.css" />
+  </head>
+  <body>
+    <img id="bg" alt="" />
+    <div id="mask"></div>
+    <div id="sel" hidden></div>
+    <div id="tip">拖动选择区域 · Enter 确认 · Esc 取消</div>
+    <div id="size" hidden></div>
+    <script src="snip.js"></script>
+  </body>
+</html>

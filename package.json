@@ -1,0 +1,74 @@
+{
+  "name": "editlong",
+  "version": "1.0.0",
+  "description": "面向大文件浏览的记事本式编辑器，支持十六进制、截图和录屏",
+  "main": "src/main/main.js",
+  "author": "EditLong",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "icon": "node scripts/make-icon.js",
+    "dist": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --win dir"
+  },
+  "keywords": [
+    "editor",
+    "hex",
+    "large-file"
+  ],
+  "license": "MIT",
+  "build": {
+    "appId": "com.editlong.app",
+    "productName": "EditLong",
+    "copyright": "Copyright © EditLong",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/ffmpeg-static/**"
+    ],
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "EditLong-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EditLong",
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "unicode": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    },
+    "compression": "maximum"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "iconv-lite": "^0.6.3"
+  }
+}

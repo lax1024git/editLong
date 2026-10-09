@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' data:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>截图</title>
+    <link rel="stylesheet" href="pin.css" />
+  </head>
+  <body>
+    <div id="bar">
+      <span class="grip" title="拖动窗口">⋮⋮</span>
+      <button id="btn-move" class="tool active" type="button" title="移动窗口">移动</button>
+      <button id="btn-pen" class="tool" type="button" title="画笔标记">画笔</button>
+      <button id="btn-text" class="tool" type="button" title="文本标记">文字</button>
+      <input id="color" type="color" value="#ff3b30" title="颜色" />
+      <button id="size-s" class="size" type="button" data-size="3" title="细">细</button>
+      <button id="size-m" class="size active" type="button" data-size="6" title="中">中</button>
+      <button id="size-l" class="size" type="button" data-size="12" title="粗">粗</button>
+      <button id="btn-undo" type="button" title="撤销 (Ctrl+Z)">撤销</button>
+      <span id="zoom-label" class="zoom-label" title="Ctrl+滚轮缩放，Ctrl+0 复位">100%</span>
+      <span class="sep"></span>
+      <button id="btn-png" type="button" title="保存为 PNG">PNG</button>
+      <button id="btn-jpg" type="button" title="保存为 JPG">JPG</button>
+      <button id="btn-copy" type="button" title="复制到剪贴板">复制</button>
+      <button id="btn-close" type="button" title="关闭">×</button>
+    </div>
+    <div id="stage">
+      <div id="board">
+        <img id="img" alt="截图" />
+        <canvas id="layer"></canvas>
+      </div>
+    </div>
+    <input id="text-input" type="text" hidden maxlength="200" />
+    <script src="pin.js"></script>
+  </body>
+</html>

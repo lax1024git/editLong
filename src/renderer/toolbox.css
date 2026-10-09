@@ -1,0 +1,260 @@
+#tbx-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 20, 0.28);
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+
+#tbx-overlay.hidden {
+  display: none !important;
+}
+
+#tbx-panel {
+  width: min(760px, 100%);
+  height: 100%;
+  background: #f7f7f7;
+  border-left: 1px solid #d0d0d0;
+  box-shadow: -4px 0 18px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.tbx-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background: #ececec;
+  border-bottom: 1px solid #d4d4d4;
+  font-weight: 600;
+}
+
+.tbx-head button {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  border-radius: 4px;
+}
+
+.tbx-head button:hover {
+  background: #fff;
+  border-color: #cfcfcf;
+}
+
+.tbx-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 10px 0;
+  background: #f7f7f7;
+  border-bottom: 1px solid #d4d4d4;
+}
+
+.tbx-tab {
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  padding: 7px 14px;
+  cursor: pointer;
+  font: inherit;
+  border-radius: 4px 4px 0 0;
+  color: #555;
+}
+
+.tbx-tab.active {
+  background: #fff;
+  border-color: #d4d4d4;
+  color: #1f1f1f;
+  font-weight: 600;
+  margin-bottom: -1px;
+}
+
+.tbx-body {
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+  overflow: auto;
+  padding: 14px;
+}
+
+.tbx-page {
+  display: none;
+  height: 100%;
+}
+
+.tbx-page.active {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tbx-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.tbx-row label,
+.tbx-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #555;
+  flex: 1;
+  min-width: 140px;
+}
+
+.tbx-field input,
+.tbx-field textarea,
+.tbx-page select,
+.tbx-page input[type="text"],
+.tbx-page input[type="number"] {
+  font: 13px/1.4 Consolas, "Microsoft YaHei UI", sans-serif;
+  border: 1px solid #c7c7c7;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.tbx-page textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.tbx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tbx-actions button,
+.tbx-mid button,
+.tbx-side-actions button,
+.img-drop button {
+  font: inherit;
+  border: 1px solid #c7c7c7;
+  background: #fff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tbx-actions button:hover,
+.tbx-mid button:hover,
+.tbx-side-actions button:hover {
+  background: #f3f3f3;
+}
+
+.tbx-msg {
+  color: #c62828;
+  min-height: 1.2em;
+  font-size: 12px;
+}
+
+.tbx-msg.ok {
+  color: #2e7d32;
+}
+
+.crypto-grid {
+  display: grid;
+  grid-template-columns: 1fr 180px 1fr;
+  gap: 10px;
+  flex: 1;
+  min-height: 280px;
+}
+
+.crypto-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.crypto-col textarea {
+  flex: 1;
+  min-height: 180px;
+}
+
+.tbx-mid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+}
+
+.tbx-mid select,
+.tbx-mid input {
+  width: 100%;
+}
+
+.img-drop {
+  border: 1px dashed #9e9e9e;
+  border-radius: 6px;
+  padding: 22px;
+  text-align: center;
+  color: #666;
+  background: #fafafa;
+  cursor: pointer;
+}
+
+.img-drop.drag {
+  border-color: #1565c0;
+  background: #e8f3ff;
+}
+
+.img-list {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.img-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.img-item span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.img-item button {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #c62828;
+}
+
+.size-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline input[type="number"] {
+  width: 90px;
+}

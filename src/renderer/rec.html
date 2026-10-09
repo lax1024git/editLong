@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>录屏</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #2b2b2b;
+        color: #eee;
+        font: 13px/1.4 "Segoe UI", "Microsoft YaHei UI", sans-serif;
+        overflow: hidden;
+        -webkit-app-region: drag;
+        user-select: none;
+      }
+      #setup,
+      #bar {
+        display: none;
+        height: 100%;
+        box-sizing: border-box;
+      }
+      body.setup #setup {
+        display: flex;
+        flex-direction: column;
+        padding: 12px 14px 10px;
+        gap: 10px;
+      }
+      body.recording #bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        -webkit-app-region: no-drag;
+      }
+      .hint {
+        color: #9aa0a6;
+        font-size: 11px;
+        min-height: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sw {
+        position: relative;
+        width: 40px;
+        height: 22px;
+        flex-shrink: 0;
+      }
+      .sw input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .sw span {
+        position: absolute;
+        inset: 0;
+        background: #555;
+        border-radius: 11px;
+        cursor: pointer;
+      }
+      .sw span::before {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        left: 3px;
+        top: 3px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.15s;
+      }
+      .sw input:checked + span {
+        background: #1e88e5;
+      }
+      .sw input:checked + span::before {
+        transform: translateX(18px);
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: auto;
+        -webkit-app-region: no-drag;
+      }
+      button {
+        -webkit-app-region: no-drag;
+        height: 26px;
+        border: 0;
+        border-radius: 4px;
+        padding: 0 12px;
+        cursor: pointer;
+        color: #fff;
+      }
+      #begin {
+        background: #1e88e5;
+      }
+      #begin:hover {
+        background: #1976d2;
+      }
+      #cancel {
+        background: #555;
+      }
+      #stop {
+        background: #e53935;
+      }
+      #stop:hover {
+        background: #c62828;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #e53935;
+        animation: blink 1s infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      #time {
+        min-width: 54px;
+        font-variant-numeric: tabular-nums;
+      }
+      .tag {
+        font-size: 11px;
+        color: #9aa0a6;
+        padding: 2px 6px;
+        border: 1px solid #555;
+        border-radius: 3px;
+      }
+      .tag.on {
+        color: #90caf9;
+        border-color: #1e88e5;
+      }
+    </style>
+  </head>
+  <body class="setup">
+    <div id="setup">
+      <h1>录屏</h1>
+      <div class="row">
+        <span>麦克风</span>
+        <label class="sw">
+          <input id="mic" type="checkbox" />
+          <span></span>
+        </label>
+      </div>
+      <div class="row">
+        <span>电脑音频</span>
+        <label class="sw">
+          <input id="sys" type="checkbox" />
+          <span></span>
+        </label>
+      </div>
+      <div id="hint" class="hint"></div>
+      <div class="actions">
+        <button id="cancel" type="button">取消</button>
+        <button id="begin" type="button">开始框选</button>
+      </div>
+    </div>
+    <div id="bar">
+      <span class="dot"></span>
+      <span>录制中</span>
+      <span id="time">00:00</span>
+      <span id="tag-mic" class="tag">麦</span>
+      <span id="tag-sys" class="tag">声</span>
+      <button id="stop" type="button">停止</button>
+    </div>
+    <script src="rec.js"></script>
+  </body>
+</html>
