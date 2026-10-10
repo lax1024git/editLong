@@ -198,7 +198,13 @@ function createWindow() {
 
   win.once("ready-to-show", () => win.show());
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  win.webContents.on("zoom-changed", () => {
+    win.webContents.setZoomFactor(1);
+    win.webContents.setZoomLevel(0);
+  });
   win.webContents.once("did-finish-load", () => {
+    win.webContents.setZoomFactor(1);
+    win.webContents.setZoomLevel(0);
     rendererReady = true;
     flushPendingOpens();
   });

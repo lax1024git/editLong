@@ -1,11 +1,22 @@
 const api = window.editlong;
 
+const FONT_MIN = 10;
+const FONT_MAX = 40;
+const FONT_DEFAULT = 14;
+
+function loadFontSize() {
+  const n = parseInt(localStorage.getItem("editlong.fontSize") || "", 10);
+  if (Number.isFinite(n) && n >= FONT_MIN && n <= FONT_MAX) return n;
+  return FONT_DEFAULT;
+}
+
 const state = {
   meta: null,
   tabId: null,
   mode: "text",
   firstLine: 0,
   firstRow: 0,
+  fontSize: loadFontSize(),
   rowHeight: 20,
   visible: 40,
   match: null,
@@ -45,6 +56,7 @@ const ui = {
   stSize: document.getElementById("st-size"),
   stMode: document.getElementById("st-mode"),
   stLang: document.getElementById("st-lang"),
+  stZoom: document.getElementById("st-zoom"),
   tabbar: document.getElementById("tabbar"),
   tabstrip: document.getElementById("tabstrip"),
 };
@@ -106,6 +118,31 @@ function setIndex(next) {
 function measureVisible() {
   const stage = document.getElementById("stage");
   state.visible = Math.max(8, Math.floor((stage.clientHeight - 16) / state.rowHeight));
+}
+
+function applyFontSize() {
+  const fs = state.fontSize;
+  const lh = Math.max(14, Math.round(fs * 1.45));
+  state.rowHeight = lh;
+  document.documentElement.style.setProperty("--editor-font-size", fs + "px");
+  document.documentElement.style.setProperty("--editor-line-height", lh + "px");
+  if (ui.stZoom) {
+    const pct = Math.round((fs / FONT_DEFAULT) * 100);
+    ui.stZoom.textContent = pct + "%";
+  }
+  try {
+    localStorage.setItem("editlong.fontSize", String(fs));
+  } catch {
+    /* ignore */
+  }
+}
+
+function setFontSize(next) {
+  const n = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(next)));
+  if (n === state.fontSize) return;
+  state.fontSize = n;
+  applyFontSize();
+  if (hasDoc()) render();
 }
 
 function applyMeta(meta) {
@@ -679,7 +716,16 @@ async function runGoto() {
 }
 
 function onWheel(e) {
-  if (!state.meta?.path) return;
+  if (e.ctrlKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    const dir = Math.sign(e.deltaY) || (e.deltaX ? Math.sign(e.deltaX) : 0);
+    if (!dir) return;
+    const step = e.deltaMode === 1 ? 2 : Math.abs(e.deltaY) >= 40 ? 2 : 1;
+    setFontSize(state.fontSize - dir * step);
+    return;
+  }
+  if (!hasDoc() || state.meta?.untitled) return;
   if (state.mode === "text" && state.meta.editable) return;
   e.preventDefault();
   const steps = Math.max(1, Math.round(Math.abs(e.deltaY) / 40));
@@ -764,6 +810,21 @@ ui.gotoInput.addEventListener("keydown", (e) => {
 });
 
 document.getElementById("stage").addEventListener("wheel", onWheel, { passive: false });
+ui.editor.addEventListener("wheel", onWheel, { passive: false });
+window.addEventListener(
+  "wheel",
+  (e) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+    }
+  },
+  { passive: false },
+);
+applyFontSize();
+if (ui.stZoom) {
+  ui.stZoom.style.cursor = "pointer";
+  ui.stZoom.onclick = () => setFontSize(FONT_DEFAULT);
+}
 ui.vthumb.addEventListener("pointerdown", onThumbPointer);
 ui.vscroll.addEventListener("pointerdown", (e) => {
   if (e.target === ui.vthumb) return;
@@ -777,6 +838,21 @@ window.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key === "Tab") {
     e.preventDefault();
     cycleTab(e.shiftKey);
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && (e.key === "0" || e.code === "Digit0" || e.code === "Numpad0")) {
+    e.preventDefault();
+    setFontSize(FONT_DEFAULT);
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && (e.key === "=" || e.key === "+" || e.code === "Equal" || e.code === "NumpadAdd")) {
+    e.preventDefault();
+    setFontSize(state.fontSize + 1);
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && (e.key === "-" || e.key === "_" || e.code === "Minus" || e.code === "NumpadSubtract")) {
+    e.preventDefault();
+    setFontSize(state.fontSize - 1);
     return;
   }
   if (!hasDoc() || !state.meta.path) return;

@@ -2,7 +2,7 @@
 
 类似记事本的桌面编辑器：打开大文件时不整份装进内存，并提供十六进制浏览、搜索，以及截图、录屏和一组常用小工具。界面为中文，基于 Electron + Node.js。
 
-当前版本：**1.2.0**
+当前版本：**1.2.1**
 
 ## 能做什么
 
@@ -76,7 +76,7 @@ npm install
 npm run dist
 ```
 
-产物在 `dist/EditLong-Setup-1.2.0-x64.exe`。录屏依赖 ffmpeg，安装包体积会比较大。仅解包目录、不生成安装程序时用 `npm run dist:dir`。`dist/` 和 `.exe` 已加入 `.gitignore`，不要提交到 GitHub（超过仓库文件大小限制）。
+产物在 `dist/EditLong-Setup-1.2.1-x64.exe`。录屏依赖 ffmpeg，安装包体积会比较大。仅解包目录、不生成安装程序时用 `npm run dist:dir`。`dist/` 和 `.exe` 已加入 `.gitignore`，不要提交到 GitHub（超过仓库文件大小限制）。
 
 ## 界面
 
@@ -122,6 +122,8 @@ npm run dist
 | 保存 / 另存为 | Ctrl+S / Ctrl+Shift+S |
 | 关闭当前标签 | Ctrl+W |
 | 切换标签 | Ctrl+Tab / Ctrl+Shift+Tab |
+| 编辑区放大 / 缩小字体 | Ctrl+滚轮，或 Ctrl+= / Ctrl+- |
+| 编辑区字体复位 | Ctrl+0（状态栏百分比也可点复位） |
 | 查找 | Ctrl+F |
 | 查找下一个 / 上一个 | F3 / Shift+F3 |
 | 转到行号或 `0x` 偏移 | Ctrl+G |
