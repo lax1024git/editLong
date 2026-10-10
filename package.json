@@ -1,6 +1,6 @@
 {
   "name": "editlong",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "面向大文件浏览的记事本式编辑器，支持十六进制、截图和录屏",
   "main": "src/main/main.js",
   "author": "EditLong",
@@ -53,6 +53,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "EditLong",
+      "include": "build/installer.nsh",
       "installerLanguages": [
         "zh_CN"
       ],
@@ -61,6 +62,39 @@
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
     },
+    "fileAssociations": [
+      {
+        "ext": [
+          "txt",
+          "log",
+          "md",
+          "json",
+          "xml",
+          "csv",
+          "ini",
+          "cfg",
+          "conf",
+          "js",
+          "ts",
+          "css",
+          "html",
+          "htm",
+          "py",
+          "c",
+          "cpp",
+          "h",
+          "java",
+          "sql",
+          "bat",
+          "cmd",
+          "yml",
+          "yaml"
+        ],
+        "name": "EditLongDocument",
+        "description": "EditLong 文档",
+        "role": "Editor"
+      }
+    ],
     "compression": "maximum"
   },
   "devDependencies": {

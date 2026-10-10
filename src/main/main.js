@@ -6,11 +6,23 @@ const { TabWorkspace } = require("./tabs");
 const { registerToolboxIpc } = require("./toolbox");
 const { registerScreenshot } = require("./screenshot");
 const { registerRecorder } = require("./recorder");
+const {
+  collectOpenPaths,
+  registerContextMenu,
+  unregisterContextMenu,
+} = require("./shellAssoc");
 
 let screenshotApi = null;
 
 let win;
 const workspace = new TabWorkspace();
+let pendingOpenPaths = [];
+let rendererReady = false;
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
 
 const LANGUAGES = [
   { id: "plaintext", label: "纯文本" },
@@ -143,6 +155,31 @@ function startIndex(tab) {
     });
 }
 
+async function openPaths(filePaths) {
+  const list = Array.isArray(filePaths) ? filePaths : [];
+  for (const filePath of list) {
+    try {
+      await openPath(filePath);
+    } catch (err) {
+      send("app-error", "无法打开：\n" + filePath + "\n" + String(err.message || err));
+    }
+  }
+}
+
+async function flushPendingOpens() {
+  if (!rendererReady || !pendingOpenPaths.length) return;
+  const list = pendingOpenPaths.slice();
+  pendingOpenPaths = [];
+  await openPaths(list);
+}
+
+function focusMainWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1100,
@@ -161,8 +198,13 @@ function createWindow() {
 
   win.once("ready-to-show", () => win.show());
   win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  win.webContents.once("did-finish-load", () => {
+    rendererReady = true;
+    flushPendingOpens();
+  });
   win.on("closed", () => {
     win = null;
+    rendererReady = false;
   });
   buildMenu();
 }
@@ -362,6 +404,31 @@ function buildMenu() {
           label: "截图快捷键...",
           click: () => send("menu", "snip-hotkey"),
         },
+        { type: "separator" },
+        {
+          label: "注册「打开方式 / 右键打开」",
+          click: async () => {
+            const r = await registerContextMenu();
+            dialog.showMessageBox(currentWindow(), {
+              type: r.ok ? "info" : "error",
+              title: "打开方式",
+              message: r.ok
+                ? "已注册：\n• 右键菜单「用 EditLong 打开」\n• 「打开方式」中可选 EditLong\n若列表未刷新，可注销后重登或重启资源管理器。"
+                : "注册失败：\n" + (r.error || ""),
+            });
+          },
+        },
+        {
+          label: "取消打开方式 / 右键注册",
+          click: async () => {
+            const r = await unregisterContextMenu();
+            dialog.showMessageBox(currentWindow(), {
+              type: r.ok ? "info" : "error",
+              title: "打开方式",
+              message: r.ok ? "已取消打开方式与右键菜单注册。" : "取消失败：\n" + (r.error || ""),
+            });
+          },
+        },
       ],
     },
     {
@@ -500,23 +567,34 @@ ipcMain.handle("ui:set-mode", (_e, mode) => {
   emitTabs();
 });
 
-app.whenReady().then(() => {
-  loadRecents();
-  screenshotApi = registerScreenshot(app, { rebuildMenu: () => buildMenu() });
-  const shot = screenshotApi.registerShortcut();
-  if (!shot.ok) screenshotApi.registerShortcut();
-  registerRecorder(app, { pickRegion: () => screenshotApi.pickRegion() });
-  createWindow();
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+if (gotLock) {
+  app.on("second-instance", (_e, argv) => {
+    const files = collectOpenPaths(argv);
+    focusMainWindow();
+    if (!files.length) return;
+    if (rendererReady) openPaths(files);
+    else pendingOpenPaths.push(...files);
   });
-});
 
-app.on("window-all-closed", async () => {
-  await workspace.closeAll();
-  if (process.platform !== "darwin") app.quit();
-});
+  app.whenReady().then(() => {
+    loadRecents();
+    screenshotApi = registerScreenshot(app, { rebuildMenu: () => buildMenu() });
+    const shot = screenshotApi.registerShortcut();
+    if (!shot.ok) screenshotApi.registerShortcut();
+    registerRecorder(app, { pickRegion: () => screenshotApi.pickRegion() });
+    pendingOpenPaths.push(...collectOpenPaths(process.argv));
+    createWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
 
-app.on("before-quit", async () => {
-  await workspace.closeAll();
-});
+  app.on("window-all-closed", async () => {
+    await workspace.closeAll();
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("before-quit", async () => {
+    await workspace.closeAll();
+  });
+}

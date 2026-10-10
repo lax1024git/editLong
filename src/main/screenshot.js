@@ -307,6 +307,11 @@ function finishSnip(payload) {
       width: payload.width,
       height: payload.height,
     });
+    try {
+      clipboard.writeImage(image);
+    } catch {
+      /* ignore clipboard errors */
+    }
     createPin(
       image,
       display.bounds.x + payload.x,
