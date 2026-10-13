@@ -115,11 +115,10 @@ function findSource(sources, display) {
   let source = sources.find((s) => String(s.display_id) === id);
   if (source) return source;
   if (sources.length === 1) return sources[0];
-  const w = Math.round(display.size.width * display.scaleFactor);
-  const h = Math.round(display.size.height * display.scaleFactor);
+  const phys = displayPhysicalBounds(display);
   source = sources.find((s) => {
     const size = s.thumbnail.getSize();
-    return Math.abs(size.width - w) < 8 && Math.abs(size.height - h) < 8;
+    return Math.abs(size.width - phys.width) < 8 && Math.abs(size.height - phys.height) < 8;
   });
   return source || sources[0];
 }
@@ -140,19 +139,46 @@ function isMostlyBlack(image) {
   return dark > samples * 0.92;
 }
 
+function displayPhysicalBounds(display) {
+  const dip = {
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width || display.size.width,
+    height: display.bounds.height || display.size.height,
+  };
+  try {
+    if (typeof screen.dipToScreenRect === "function") {
+      const phys = screen.dipToScreenRect(null, dip);
+      if (phys && phys.width > 0 && phys.height > 0) {
+        return {
+          x: Math.round(phys.x),
+          y: Math.round(phys.y),
+          width: Math.max(1, Math.round(phys.width)),
+          height: Math.max(1, Math.round(phys.height)),
+        };
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  const s = display.scaleFactor || 1;
+  return {
+    x: Math.round(dip.x * s),
+    y: Math.round(dip.y * s),
+    width: Math.max(1, Math.round(dip.width * s)),
+    height: Math.max(1, Math.round(dip.height * s)),
+  };
+}
+
 function captureDisplayGdi(display) {
-  const scale = display.scaleFactor || 1;
-  const x = Math.round(display.bounds.x * scale);
-  const y = Math.round(display.bounds.y * scale);
-  const w = Math.max(1, Math.round(display.size.width * scale));
-  const h = Math.max(1, Math.round(display.size.height * scale));
+  const phys = displayPhysicalBounds(display);
   const tmp = path.join(os.tmpdir(), "editlong-gdi-" + display.id + "-" + Date.now() + ".png");
   const tmpEsc = tmp.replace(/'/g, "''");
   const script = [
     "Add-Type -AssemblyName System.Drawing",
-    `$b = New-Object System.Drawing.Bitmap(${w}, ${h})`,
+    `$b = New-Object System.Drawing.Bitmap(${phys.width}, ${phys.height})`,
     "$g = [System.Drawing.Graphics]::FromImage($b)",
-    `$g.CopyFromScreen(${x}, ${y}, 0, 0, $b.Size)`,
+    `$g.CopyFromScreen(${phys.x}, ${phys.y}, 0, 0, $b.Size)`,
     `$b.Save('${tmpEsc}', [System.Drawing.Imaging.ImageFormat]::Png)`,
     "$g.Dispose()",
     "$b.Dispose()",
@@ -185,9 +211,9 @@ async function withAppHidden(fn) {
 }
 
 async function captureDisplay(display) {
-  const scale = display.scaleFactor || 1;
-  const thumbW = Math.max(1, Math.round(display.size.width * scale));
-  const thumbH = Math.max(1, Math.round(display.size.height * scale));
+  const phys = displayPhysicalBounds(display);
+  const thumbW = phys.width;
+  const thumbH = phys.height;
   let image = null;
   try {
     const sources = await desktopCapturer.getSources({
@@ -212,17 +238,55 @@ async function captureDisplay(display) {
 
 function cropFrame(image, display, rect) {
   const size = image.getSize();
-  const scaleX = size.width / Math.max(1, display.size.width);
-  const scaleY = size.height / Math.max(1, display.size.height);
-  const crop = {
-    x: Math.max(0, Math.round(rect.x * scaleX)),
-    y: Math.max(0, Math.round(rect.y * scaleY)),
-    width: Math.max(1, Math.round(rect.width * scaleX)),
-    height: Math.max(1, Math.round(rect.height * scaleY)),
-  };
-  if (crop.x + crop.width > size.width) crop.width = Math.max(1, size.width - crop.x);
-  if (crop.y + crop.height > size.height) crop.height = Math.max(1, size.height - crop.y);
-  return image.crop(crop);
+  const viewW = Math.max(1, Number(rect.viewW) || display.bounds.width || display.size.width);
+  const viewH = Math.max(1, Number(rect.viewH) || display.bounds.height || display.size.height);
+
+  // 按预览窗口实际像素比例映射，并对角取整，避免宽高各自四舍五入造成偏移
+  let x1 = Math.round((rect.x / viewW) * size.width);
+  let y1 = Math.round((rect.y / viewH) * size.height);
+  let x2 = Math.round(((rect.x + rect.width) / viewW) * size.width);
+  let y2 = Math.round(((rect.y + rect.height) / viewH) * size.height);
+
+  // 若可用，再用 DIP→物理 坐标校正（多屏/非整数缩放更稳）
+  try {
+    if (typeof screen.dipToScreenRect === "function") {
+      const dipFull = {
+        x: display.bounds.x,
+        y: display.bounds.y,
+        width: display.bounds.width || display.size.width,
+        height: display.bounds.height || display.size.height,
+      };
+      const dipSel = {
+        x: display.bounds.x + rect.x,
+        y: display.bounds.y + rect.y,
+        width: rect.width,
+        height: rect.height,
+      };
+      const physFull = screen.dipToScreenRect(null, dipFull);
+      const physSel = screen.dipToScreenRect(null, dipSel);
+      if (physFull && physSel && physFull.width > 0 && physFull.height > 0) {
+        const sx = size.width / physFull.width;
+        const sy = size.height / physFull.height;
+        x1 = Math.round((physSel.x - physFull.x) * sx);
+        y1 = Math.round((physSel.y - physFull.y) * sy);
+        x2 = Math.round((physSel.x - physFull.x + physSel.width) * sx);
+        y2 = Math.round((physSel.y - physFull.y + physSel.height) * sy);
+      }
+    }
+  } catch {
+    /* keep ratio mapping */
+  }
+
+  x1 = Math.max(0, Math.min(size.width - 1, x1));
+  y1 = Math.max(0, Math.min(size.height - 1, y1));
+  x2 = Math.max(x1 + 1, Math.min(size.width, x2));
+  y2 = Math.max(y1 + 1, Math.min(size.height, y2));
+  return image.crop({
+    x: x1,
+    y: y1,
+    width: x2 - x1,
+    height: y2 - y1,
+  });
 }
 
 function createPin(image, screenX, screenY, dipW, dipH) {
@@ -283,15 +347,43 @@ function finishSnip(payload) {
     frames.clear();
     cleanupFrameFiles();
     capturing = false;
+    const dipSel = {
+      x: display.bounds.x + payload.x,
+      y: display.bounds.y + payload.y,
+      width: payload.width,
+      height: payload.height,
+    };
+    let physSel = null;
+    try {
+      if (typeof screen.dipToScreenRect === "function") {
+        physSel = screen.dipToScreenRect(null, dipSel);
+      }
+    } catch {
+      physSel = null;
+    }
+    if (!physSel) {
+      const s = display.scaleFactor || 1;
+      physSel = {
+        x: Math.round(dipSel.x * s),
+        y: Math.round(dipSel.y * s),
+        width: Math.round(dipSel.width * s),
+        height: Math.round(dipSel.height * s),
+      };
+    }
     done({
       displayId: display.id,
       x: payload.x,
       y: payload.y,
       width: payload.width,
       height: payload.height,
-      screenX: display.bounds.x + payload.x,
-      screenY: display.bounds.y + payload.y,
+      screenX: dipSel.x,
+      screenY: dipSel.y,
       scale: display.scaleFactor || 1,
+      // 物理像素，供 ffmpeg gdigrab 直接使用
+      physX: Math.round(physSel.x),
+      physY: Math.round(physSel.y),
+      physW: Math.max(2, Math.round(physSel.width)),
+      physH: Math.max(2, Math.round(physSel.height)),
     });
     return;
   }
@@ -306,19 +398,17 @@ function finishSnip(payload) {
       y: payload.y,
       width: payload.width,
       height: payload.height,
+      viewW: payload.viewW,
+      viewH: payload.viewH,
     });
     try {
       clipboard.writeImage(image);
     } catch {
       /* ignore clipboard errors */
     }
-    createPin(
-      image,
-      display.bounds.x + payload.x,
-      display.bounds.y + payload.y,
-      payload.width,
-      payload.height
-    );
+    const pinX = display.bounds.x + payload.x;
+    const pinY = display.bounds.y + payload.y;
+    createPin(image, pinX, pinY, payload.width, payload.height);
   } finally {
     capturing = false;
   }
@@ -389,13 +479,27 @@ async function startRegionSnip(opts = {}) {
         nodeIntegration: false,
         sandbox: false,
         webSecurity: false,
+        zoomFactor: 1,
       },
+    });
+    // 强制对齐显示器 DIP 边界，避免窗口实际位置与 bounds 有偏差
+    overlay.setBounds({
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
     });
     overlay.setAlwaysOnTop(true, "screen-saver");
     overlay.loadFile(path.join(rendererDir(), "snip.html"), {
       query: { displayId: String(display.id), purpose: opts.purpose || "snip" },
     });
     overlay.webContents.on("did-finish-load", async () => {
+      try {
+        overlay.webContents.setZoomFactor(1);
+        overlay.webContents.setZoomLevel(0);
+      } catch {
+        /* ignore */
+      }
       try {
         const img = frames.get(String(display.id));
         if (!img) {
@@ -427,7 +531,15 @@ async function startRegionSnip(opts = {}) {
           }
         }
       }
-      if (!overlay.isDestroyed()) overlay.show();
+      if (!overlay.isDestroyed()) {
+        overlay.setBounds({
+          x: display.bounds.x,
+          y: display.bounds.y,
+          width: display.bounds.width,
+          height: display.bounds.height,
+        });
+        overlay.show();
+      }
     });
     overlay.on("closed", () => {
       overlayWindows = overlayWindows.filter((w) => w !== overlay);

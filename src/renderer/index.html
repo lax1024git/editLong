@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     />
     <title>EditLong</title>
     <link rel="stylesheet" href="styles.css" />
@@ -127,6 +127,13 @@
           <rect fill="#6d4c41" x="7.1" y="9" width="1.8" height="2.4" rx="0.4"/>
         </svg>
       </button>
+      <button id="btn-storage" class="tb-btn" type="button" title="对象存储 OSS/COS/BOS/S3/B2">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <ellipse fill="#90caf9" stroke="#1565c0" cx="8" cy="4.2" rx="5.5" ry="2.2"/>
+          <path fill="#e3f2fd" stroke="#1565c0" d="M2.5 4.2v3.6c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V4.2"/>
+          <path fill="#bbdefb" stroke="#1565c0" d="M2.5 7.8v3.6c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V7.8"/>
+        </svg>
+      </button>
       <button id="btn-record" class="tb-btn" type="button" title="区域录屏 (Ctrl+Shift+R)">
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <circle fill="#e53935" cx="8" cy="8" r="5.2"/>
@@ -214,6 +221,7 @@
           <button class="tbx-tab active" type="button" data-tab="time">时间</button>
           <button class="tbx-tab" type="button" data-tab="json">JSON</button>
           <button class="tbx-tab" type="button" data-tab="image">图片</button>
+          <button class="tbx-tab" type="button" data-tab="qrcode">二维码</button>
           <button class="tbx-tab" type="button" data-tab="crypto">加解密</button>
         </nav>
         <div class="tbx-body">
@@ -305,6 +313,50 @@
               <button id="tbx-img-clear" type="button">清空列表</button>
             </div>
             <div id="tbx-img-msg" class="tbx-msg"></div>
+          </section>
+
+          <section class="tbx-page" data-page="qrcode">
+            <div class="tbx-field">
+              内容（文本 / 链接 / 任意字符串）
+              <textarea id="tbx-qr-text" rows="4" placeholder="例如 https://example.com 或任意文本"></textarea>
+            </div>
+            <div class="tbx-row">
+              <label>尺寸
+                <select id="tbx-qr-size">
+                  <option value="180">180 px</option>
+                  <option value="240">240 px</option>
+                  <option value="280" selected>280 px</option>
+                  <option value="360">360 px</option>
+                  <option value="480">480 px</option>
+                </select>
+              </label>
+              <label>容错级别
+                <select id="tbx-qr-ec">
+                  <option value="L">L（约 7%）</option>
+                  <option value="M" selected>M（约 15%）</option>
+                  <option value="Q">Q（约 25%）</option>
+                  <option value="H">H（约 30%）</option>
+                </select>
+              </label>
+              <label>边距
+                <select id="tbx-qr-margin">
+                  <option value="1">1</option>
+                  <option value="2" selected>2</option>
+                  <option value="4">4</option>
+                </select>
+              </label>
+            </div>
+            <div class="tbx-actions">
+              <button id="tbx-qr-gen" type="button">生成二维码</button>
+              <button id="tbx-qr-copy" type="button">复制图片</button>
+              <button id="tbx-qr-save" type="button">保存 PNG</button>
+              <button id="tbx-qr-clear" type="button">清空</button>
+            </div>
+            <div id="tbx-qr-preview" class="qr-preview">
+              <span class="qr-placeholder">生成后在此预览</span>
+              <img id="tbx-qr-img" alt="二维码" hidden />
+            </div>
+            <div id="tbx-qr-msg" class="tbx-msg"></div>
           </section>
 
           <section class="tbx-page" data-page="crypto">

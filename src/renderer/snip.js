@@ -36,11 +36,19 @@ function paint(r) {
   sizeEl.style.top = Math.max(0, r.y - 22) + "px";
 }
 
+function viewSize() {
+  return {
+    viewW: window.innerWidth || document.documentElement.clientWidth || 1,
+    viewH: window.innerHeight || document.documentElement.clientHeight || 1,
+  };
+}
+
 function commit() {
   if (!rect || rect.width < 3 || rect.height < 3) {
     window.snip.cancel();
     return;
   }
+  const view = viewSize();
   window.snip.done({
     displayId,
     x: rect.x,
@@ -49,6 +57,9 @@ function commit() {
     height: rect.height,
     screenX: window.screenX + rect.x,
     screenY: window.screenY + rect.y,
+    viewW: view.viewW,
+    viewH: view.viewH,
+    dpr: window.devicePixelRatio || 1,
   });
 }
 

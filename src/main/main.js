@@ -6,6 +6,7 @@ const { TabWorkspace } = require("./tabs");
 const { registerToolboxIpc } = require("./toolbox");
 const { registerScreenshot } = require("./screenshot");
 const { registerRecorder } = require("./recorder");
+const { registerStorage } = require("./storage");
 const {
   collectOpenPaths,
   registerContextMenu,
@@ -13,6 +14,7 @@ const {
 } = require("./shellAssoc");
 
 let screenshotApi = null;
+let storageApi = null;
 
 let win;
 const workspace = new TabWorkspace();
@@ -445,7 +447,13 @@ function buildMenu() {
         { label: "时间", click: () => send("menu", "toolbox:time") },
         { label: "JSON", click: () => send("menu", "toolbox:json") },
         { label: "图片", click: () => send("menu", "toolbox:image") },
+        { label: "二维码", click: () => send("menu", "toolbox:qrcode") },
         { label: "加解密", click: () => send("menu", "toolbox:crypto") },
+        { type: "separator" },
+        {
+          label: "对象存储 (OSS/COS/BOS/S3/B2)",
+          click: () => storageApi && storageApi.open(),
+        },
         { type: "separator" },
         {
           label:
@@ -588,6 +596,7 @@ if (gotLock) {
     const shot = screenshotApi.registerShortcut();
     if (!shot.ok) screenshotApi.registerShortcut();
     registerRecorder(app, { pickRegion: () => screenshotApi.pickRegion() });
+    storageApi = registerStorage(app);
     pendingOpenPaths.push(...collectOpenPaths(process.argv));
     createWindow();
     app.on("activate", () => {

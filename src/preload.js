@@ -36,10 +36,14 @@ contextBridge.exposeInMainWorld("editlong", {
     ipcRenderer.on("encoding-changed", (_e, meta) => cb(meta));
   },
   toolboxCrypto: (payload) => ipcRenderer.invoke("toolbox:crypto", payload),
+  toolboxQrcode: (payload) => ipcRenderer.invoke("toolbox:qrcode", payload),
+  toolboxCopyImage: (dataUrl) => ipcRenderer.invoke("toolbox:copy-image", dataUrl),
+  toolboxSaveImage: (payload) => ipcRenderer.invoke("toolbox:save-image", payload),
   toolboxPickDir: () => ipcRenderer.invoke("toolbox:pick-dir"),
   toolboxWriteFile: (payload) => ipcRenderer.invoke("toolbox:write-file", payload),
   getSnipShortcut: () => ipcRenderer.invoke("snip:get-shortcut"),
   setSnipShortcut: (accelerator) => ipcRenderer.invoke("snip:set-shortcut", accelerator),
   startSnip: () => ipcRenderer.invoke("snip:start"),
   startRecord: () => ipcRenderer.invoke("record:start"),
+  openStorage: () => ipcRenderer.invoke("storage:open-window"),
 });

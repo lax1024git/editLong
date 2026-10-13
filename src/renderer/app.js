@@ -778,6 +778,7 @@ document.getElementById("btn-find-next").onclick = () => runFind(false);
 document.getElementById("btn-goto").onclick = () => showGoto(true);
 document.getElementById("btn-snip").onclick = () => api.startSnip();
 document.getElementById("btn-record").onclick = () => api.startRecord();
+document.getElementById("btn-storage").onclick = () => api.openStorage && api.openStorage();
 document.getElementById("find-next").onclick = () => runFind(false);
 document.getElementById("find-prev").onclick = () => runFind(true);
 document.getElementById("find-close").onclick = () => showFind(false);

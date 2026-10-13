@@ -18,6 +18,11 @@ const tbx = (() => {
   const hashAlgo = document.getElementById("tbx-hash-algo");
   const cryptoMsg = document.getElementById("tbx-crypto-msg");
   const imgFile = document.getElementById("tbx-img-file");
+  const qrText = document.getElementById("tbx-qr-text");
+  const qrImg = document.getElementById("tbx-qr-img");
+  const qrMsg = document.getElementById("tbx-qr-msg");
+  const qrPlaceholder = document.querySelector("#tbx-qr-preview .qr-placeholder");
+  let lastQrDataUrl = "";
 
   const ZONES = [
     { id: "Asia/Shanghai", label: "中国 (Asia/Shanghai, UTC+8)" },
@@ -407,6 +412,64 @@ const tbx = (() => {
     setMsg(cryptoMsg, "完成", true);
   }
 
+  function clearQrPreview() {
+    lastQrDataUrl = "";
+    if (qrImg) {
+      qrImg.removeAttribute("src");
+      qrImg.hidden = true;
+    }
+    if (qrPlaceholder) qrPlaceholder.hidden = false;
+  }
+
+  async function generateQr() {
+    const result = await window.editlong.toolboxQrcode({
+      text: qrText.value,
+      size: document.getElementById("tbx-qr-size").value,
+      margin: document.getElementById("tbx-qr-margin").value,
+      errorCorrectionLevel: document.getElementById("tbx-qr-ec").value,
+    });
+    if (!result.ok) {
+      clearQrPreview();
+      setMsg(qrMsg, result.error, false);
+      return;
+    }
+    lastQrDataUrl = result.dataUrl;
+    qrImg.src = result.dataUrl;
+    qrImg.hidden = false;
+    if (qrPlaceholder) qrPlaceholder.hidden = true;
+    setMsg(qrMsg, "已生成 " + result.width + "×" + result.width, true);
+  }
+
+  async function copyQrImage() {
+    if (!lastQrDataUrl) {
+      setMsg(qrMsg, "请先生成二维码", false);
+      return;
+    }
+    const result = await window.editlong.toolboxCopyImage(lastQrDataUrl);
+    if (!result.ok) {
+      setMsg(qrMsg, result.error || "复制失败", false);
+      return;
+    }
+    setMsg(qrMsg, "已复制到剪贴板", true);
+  }
+
+  async function saveQrImage() {
+    if (!lastQrDataUrl) {
+      setMsg(qrMsg, "请先生成二维码", false);
+      return;
+    }
+    const result = await window.editlong.toolboxSaveImage({
+      dataUrl: lastQrDataUrl,
+      defaultName: "qrcode.png",
+    });
+    if (!result.ok) {
+      setMsg(qrMsg, result.error || "保存失败", false);
+      return;
+    }
+    if (result.cancelled) return;
+    setMsg(qrMsg, "已保存：" + result.path, true);
+  }
+
   function show(tab) {
     overlay.classList.remove("hidden");
     if (tab) setTab(tab);
@@ -503,6 +566,16 @@ const tbx = (() => {
     };
     document.getElementById("tbx-copy-plain").onclick = () => copyText(plainEl.value);
     document.getElementById("tbx-copy-cipher").onclick = () => copyText(cipherEl.value);
+
+    document.getElementById("tbx-qr-gen").onclick = generateQr;
+    document.getElementById("tbx-qr-copy").onclick = copyQrImage;
+    document.getElementById("tbx-qr-save").onclick = saveQrImage;
+    document.getElementById("tbx-qr-clear").onclick = () => {
+      qrText.value = "";
+      clearQrPreview();
+      setMsg(qrMsg, "", true);
+    };
+
     document.getElementById("btn-toolbox").onclick = () => show();
     window.addEventListener("editlong-toolbox", (e) => show(e.detail || undefined));
 

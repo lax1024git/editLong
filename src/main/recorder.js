@@ -320,10 +320,26 @@ async function beginRecord() {
   }
 
   const scale = region.scale || 1;
-  const x = even(Math.round(region.screenX * scale));
-  const y = even(Math.round(region.screenY * scale));
-  const vw = even(Math.round(region.width * scale));
-  const vh = even(Math.round(region.height * scale));
+  const x = even(
+    Number.isFinite(region.physX)
+      ? Math.round(region.physX)
+      : Math.round(region.screenX * scale),
+  );
+  const y = even(
+    Number.isFinite(region.physY)
+      ? Math.round(region.physY)
+      : Math.round(region.screenY * scale),
+  );
+  const vw = even(
+    Number.isFinite(region.physW)
+      ? Math.round(region.physW)
+      : Math.round(region.width * scale),
+  );
+  const vh = even(
+    Number.isFinite(region.physH)
+      ? Math.round(region.physH)
+      : Math.round(region.height * scale),
+  );
   let audio = buildAudioArgs(micOn, sysOn);
   const notes = audio.warnings.slice();
   if (sysOn && audio.useWasapi) {

@@ -1,7 +1,8 @@
 const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
-const { dialog } = require("electron");
+const { dialog, clipboard, nativeImage } = require("electron");
+const QRCode = require("qrcode");
 const des = require("./des");
 
 const AES_SALT = Buffer.from("EditLongToolboxAES1");
@@ -78,8 +79,63 @@ async function runCrypto({ action, mode, text, password, hashAlgo }) {
   }
 }
 
+async function makeQrcode({ text, size, margin, errorCorrectionLevel }) {
+  try {
+    const content = String(text || "").trim();
+    if (!content) return { ok: false, error: "请输入要编码的内容" };
+    if (content.length > 2000) return { ok: false, error: "内容过长（最多约 2000 字符）" };
+    const width = Math.min(800, Math.max(120, Math.round(Number(size) || 280)));
+    const marginNum = Number(margin);
+    const m = Math.min(8, Math.max(0, Math.round(Number.isFinite(marginNum) ? marginNum : 2)));
+    const ec =
+      errorCorrectionLevel === "L" ||
+      errorCorrectionLevel === "M" ||
+      errorCorrectionLevel === "Q" ||
+      errorCorrectionLevel === "H"
+        ? errorCorrectionLevel
+        : "M";
+    const dataUrl = await QRCode.toDataURL(content, {
+      width,
+      margin: m,
+      errorCorrectionLevel: ec,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+    return { ok: true, dataUrl, width };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
+}
+
 function registerToolboxIpc(ipcMain, getWindow) {
   ipcMain.handle("toolbox:crypto", (_e, payload) => runCrypto(payload));
+  ipcMain.handle("toolbox:qrcode", (_e, payload) => makeQrcode(payload || {}));
+  ipcMain.handle("toolbox:copy-image", (_e, dataUrl) => {
+    try {
+      const image = nativeImage.createFromDataURL(String(dataUrl || ""));
+      if (image.isEmpty()) return { ok: false, error: "图片无效" };
+      clipboard.writeImage(image);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
+  ipcMain.handle("toolbox:save-image", async (_e, { dataUrl, defaultName }) => {
+    try {
+      const image = nativeImage.createFromDataURL(String(dataUrl || ""));
+      if (image.isEmpty()) return { ok: false, cancelled: true, error: "图片无效" };
+      const win = getWindow();
+      const result = await dialog.showSaveDialog(win, {
+        title: "保存二维码",
+        defaultPath: defaultName || "qrcode.png",
+        filters: [{ name: "PNG 图片", extensions: ["png"] }],
+      });
+      if (result.canceled || !result.filePath) return { ok: true, cancelled: true };
+      await fs.writeFile(result.filePath, image.toPNG());
+      return { ok: true, cancelled: false, path: result.filePath };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
   ipcMain.handle("toolbox:pick-dir", async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win, {

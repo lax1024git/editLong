@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>对象存储 - EditLong</title>
+    <link rel="stylesheet" href="storage.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="side-head">
+        <span>连接源</span>
+        <button id="btn-add" type="button" title="新建连接">+</button>
+      </div>
+      <div id="conn-list"></div>
+    </aside>
+
+    <main id="main">
+      <header id="toolbar">
+        <button id="btn-refresh" type="button" disabled>刷新</button>
+        <button id="btn-up" type="button" disabled>上级</button>
+        <button id="btn-mkdir" type="button" disabled>新建文件夹</button>
+        <button id="btn-upload" type="button" disabled>上传</button>
+        <button id="btn-download" type="button" disabled>下载 / 另存</button>
+        <button id="btn-delete" type="button" disabled>删除</button>
+        <select id="bucket-select" disabled></select>
+        <span id="status-text"></span>
+      </header>
+      <nav id="crumb"></nav>
+      <div id="drop-hint" class="hidden">松开以上传到当前目录</div>
+      <div id="browser">
+        <div id="empty">请选择左侧连接源，或新建 OSS / COS / BOS / S3 / B2 连接</div>
+        <table id="file-table" class="hidden">
+          <thead>
+            <tr>
+              <th class="col-check"><input id="check-all" type="checkbox" /></th>
+              <th>名称</th>
+              <th class="col-size">大小</th>
+              <th class="col-time">修改时间</th>
+            </tr>
+          </thead>
+          <tbody id="file-body"></tbody>
+        </table>
+      </div>
+      <footer id="progress" class="hidden"></footer>
+    </main>
+
+    <div id="dlg-overlay" class="hidden">
+      <div id="dlg">
+        <h3 id="dlg-title">连接</h3>
+        <div class="form">
+          <label>名称 <input id="f-name" type="text" placeholder="我的 OSS" /></label>
+          <label>
+            类型
+            <select id="f-provider"></select>
+          </label>
+          <p id="f-hint" class="hint"></p>
+          <label>Endpoint <input id="f-endpoint" type="text" placeholder="https://..." /></label>
+          <label>Region <input id="f-region" type="text" placeholder="区域" /></label>
+          <label>Access Key <input id="f-ak" type="text" autocomplete="off" /></label>
+          <label>Secret Key <input id="f-sk" type="password" autocomplete="new-password" /></label>
+          <label>默认 Bucket（可选） <input id="f-bucket" type="text" /></label>
+          <label class="check">
+            <input id="f-pathstyle" type="checkbox" /> 强制 Path-Style（部分兼容端点需要）
+          </label>
+        </div>
+        <div class="dlg-actions">
+          <button id="dlg-test" type="button">测试连接</button>
+          <button id="dlg-save" type="button">保存</button>
+          <button id="dlg-cancel" type="button">取消</button>
+        </div>
+        <div id="dlg-msg" class="msg"></div>
+      </div>
+    </div>
+
+    <script src="storage.js"></script>
+  </body>
+</html>
