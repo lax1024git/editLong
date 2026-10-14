@@ -1,7 +1,7 @@
 const fs = require("fs");
 const fsp = require("fs/promises");
 const path = require("path");
-const { BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { BrowserWindow, ipcMain, dialog, shell, clipboard } = require("electron");
 const {
   S3Client,
   ListObjectsV2Command,
@@ -10,6 +10,8 @@ const {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  CopyObjectCommand,
+  HeadObjectCommand,
   GetBucketLocationCommand,
   HeadBucketCommand,
 } = require("@aws-sdk/client-s3");
@@ -286,6 +288,66 @@ function friendlyS3Error(err) {
   return msg;
 }
 
+function encodeObjectKey(key) {
+  return String(key || "")
+    .replace(/^\/+/, "")
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+}
+
+/** 根据连接配置拼出对象的 HTTP 访问地址（公开读才可直接打开） */
+async function buildObjectUrl(connId, bucket, key) {
+  const conn = getConnection(connId);
+  if (!conn) throw new Error("连接不存在");
+  if (!bucket) throw new Error("未选择 Bucket");
+  if (!key) throw new Error("未选择对象");
+  const objectKey = String(key).replace(/^\/+/, "");
+  if (!objectKey) throw new Error("对象路径无效");
+
+  const provider = PROVIDERS[conn.provider] || PROVIDERS.s3;
+  const forcePathStyle =
+    typeof conn.forcePathStyle === "boolean" ? conn.forcePathStyle : Boolean(provider.forcePathStyle);
+  let region = conn.region || provider.region || "us-east-1";
+  if (isOfficialAwsS3(conn)) {
+    region = await resolveAwsBucketRegion(conn, bucket);
+  }
+
+  const encodedKey = encodeObjectKey(objectKey);
+  const customEndpoint = (conn.endpoint || "").trim() || (provider.endpoint || "").trim();
+
+  if (isOfficialAwsS3(conn)) {
+    if (forcePathStyle) {
+      const host = region === "us-east-1" ? "s3.amazonaws.com" : "s3." + region + ".amazonaws.com";
+      return "https://" + host + "/" + encodeURIComponent(bucket) + "/" + encodedKey;
+    }
+    const host =
+      region === "us-east-1"
+        ? bucket + ".s3.amazonaws.com"
+        : bucket + ".s3." + region + ".amazonaws.com";
+    return "https://" + host + "/" + encodedKey;
+  }
+
+  let base = customEndpoint.replace(/\/+$/, "");
+  if (!base) throw new Error("连接未配置 Endpoint，无法生成访问地址");
+  if (!/^https?:\/\//i.test(base)) base = "https://" + base;
+
+  let u;
+  try {
+    u = new URL(base);
+  } catch {
+    throw new Error("Endpoint 无效，无法生成访问地址");
+  }
+
+  if (forcePathStyle) {
+    return u.protocol + "//" + u.host + "/" + encodeURIComponent(bucket) + "/" + encodedKey;
+  }
+  if (u.host === bucket || u.host.startsWith(bucket + ".")) {
+    return u.protocol + "//" + u.host + "/" + encodedKey;
+  }
+  return u.protocol + "//" + bucket + "." + u.host + "/" + encodedKey;
+}
+
 function normalizePrefix(prefix) {
   if (!prefix) return "";
   let p = String(prefix).replace(/\\/g, "/");
@@ -468,6 +530,110 @@ async function createFolder(connId, bucket, prefix) {
   });
 }
 
+function parentPrefixOfKey(key, isFolder) {
+  const raw = String(key || "").replace(/^\/+/, "");
+  if (isFolder) {
+    const p = normalizePrefix(raw);
+    const parts = p.split("/").filter(Boolean);
+    parts.pop();
+    return parts.length ? parts.join("/") + "/" : "";
+  }
+  const idx = raw.lastIndexOf("/");
+  return idx >= 0 ? raw.slice(0, idx + 1) : "";
+}
+
+function encodeCopySource(bucket, key) {
+  return [bucket, ...String(key).split("/")]
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+}
+
+async function objectExists(client, bucket, key) {
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    const status = err && err.$metadata && err.$metadata.httpStatusCode;
+    const name = String((err && (err.name || err.Code || err.code)) || "");
+    if (status === 404 || /NotFound|NoSuchKey/i.test(name)) return false;
+    throw err;
+  }
+}
+
+async function copyThenDelete(client, bucket, fromKey, toKey) {
+  if (fromKey === toKey) return;
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      Key: toKey,
+      CopySource: encodeCopySource(bucket, fromKey),
+      MetadataDirective: "COPY",
+    }),
+  );
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: fromKey }));
+}
+
+/** 同目录重命名文件或文件夹（S3 无 Copy + Delete 实现） */
+async function renameObject(connId, bucket, fromKey, newName, type) {
+  const conn = getConnection(connId);
+  if (!conn) throw new Error("连接不存在");
+  if (!bucket || !fromKey) throw new Error("缺少对象路径");
+  const isFolder = type === "folder" || /\/$/.test(fromKey);
+  const name = String(newName || "")
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\\/g, "/");
+  if (!name || name.includes("..") || name.includes("/")) {
+    throw new Error("名称无效：不能包含 /、\\ 或 ..");
+  }
+  const parent = parentPrefixOfKey(fromKey, isFolder);
+  const toKey = isFolder ? normalizePrefix(parent + name) : parent + name;
+  const fromNorm = isFolder ? normalizePrefix(fromKey) : String(fromKey).replace(/^\/+/, "");
+  if (fromNorm === toKey) return { fromKey: fromNorm, toKey, renamed: 0 };
+
+  return withBucketClient(conn, bucket, async (client) => {
+    if (isFolder) {
+      if (await objectExists(client, bucket, toKey)) {
+        throw new Error("目标文件夹已存在");
+      }
+      // 目标前缀下已有对象也视为冲突
+      const destProbe = await client.send(
+        new ListObjectsV2Command({ Bucket: bucket, Prefix: toKey, MaxKeys: 1 }),
+      );
+      if ((destProbe.Contents || []).length || (destProbe.CommonPrefixes || []).length) {
+        throw new Error("目标文件夹已存在");
+      }
+      const keys = await collectPrefixKeys(client, bucket, fromNorm);
+      if (!keys.length) {
+        // 仅有空文件夹占位
+        await client.send(
+          new PutObjectCommand({ Bucket: bucket, Key: toKey, Body: Buffer.alloc(0) }),
+        );
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: fromNorm }));
+        } catch {
+          /* ignore */
+        }
+        return { fromKey: fromNorm, toKey, renamed: 1 };
+      }
+      let renamed = 0;
+      for (const key of keys) {
+        const rel = key.slice(fromNorm.length);
+        const dest = toKey + rel;
+        await copyThenDelete(client, bucket, key, dest);
+        renamed += 1;
+      }
+      return { fromKey: fromNorm, toKey, renamed };
+    }
+
+    if (await objectExists(client, bucket, toKey)) {
+      throw new Error("目标文件名已存在");
+    }
+    await copyThenDelete(client, bucket, fromNorm, toKey);
+    return { fromKey: fromNorm, toKey, renamed: 1 };
+  });
+}
+
 async function collectPrefixKeys(client, bucket, prefix) {
   const Pref = normalizePrefix(prefix);
   const keys = [];
@@ -636,6 +802,31 @@ function registerStorage(app) {
   ipcMain.handle("storage:mkdir", async (_e, { connId, bucket, prefix }) => {
     try {
       return { ok: true, ...(await createFolder(connId, bucket, prefix)) };
+    } catch (err) {
+      return { ok: false, error: friendlyS3Error(err) };
+    }
+  });
+  ipcMain.handle("storage:object-url", async (_e, { connId, bucket, key }) => {
+    try {
+      const url = await buildObjectUrl(connId, bucket, key);
+      return { ok: true, url };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
+  ipcMain.handle("storage:copy-object-url", async (_e, { connId, bucket, key }) => {
+    try {
+      const url = await buildObjectUrl(connId, bucket, key);
+      clipboard.writeText(url);
+      return { ok: true, url };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
+  ipcMain.handle("storage:rename", async (_e, { connId, bucket, key, newName, type }) => {
+    try {
+      const data = await renameObject(connId, bucket, key, newName, type);
+      return { ok: true, ...data };
     } catch (err) {
       return { ok: false, error: friendlyS3Error(err) };
     }

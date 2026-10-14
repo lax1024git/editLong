@@ -25,8 +25,16 @@ const ui = {
   browser: document.getElementById("browser"),
   dlg: document.getElementById("dlg-overlay"),
   dlgMsg: document.getElementById("dlg-msg"),
+  mkdirOverlay: document.getElementById("mkdir-overlay"),
+  mkdirName: document.getElementById("mkdir-name"),
+  mkdirMsg: document.getElementById("mkdir-msg"),
+  ctxMenu: document.getElementById("ctx-menu"),
   checkAll: document.getElementById("check-all"),
 };
+
+let ctxTarget = null;
+/** @type {{ mode: "mkdir" | "rename", item?: object | null }} */
+let nameDialog = { mode: "mkdir", item: null };
 
 function formatSize(n) {
   n = Number(n) || 0;
@@ -222,9 +230,65 @@ function paintRows() {
         doDownload();
       }
     };
+    tr.oncontextmenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!state.selected.has(selKey(item))) {
+        state.selected.clear();
+        state.selected.add(selKey(item));
+        paintRows();
+        refreshToolbar();
+      }
+      openContextMenu(e.clientX, e.clientY, item);
+    };
     ui.body.appendChild(tr);
   });
   refreshToolbar();
+}
+
+function hideContextMenu() {
+  ctxTarget = null;
+  ui.ctxMenu.classList.add("hidden");
+}
+
+function openContextMenu(x, y, item) {
+  ctxTarget = item;
+  const copyBtn = ui.ctxMenu.querySelector('[data-action="copy-url"]');
+  const renameBtn = ui.ctxMenu.querySelector('[data-action="rename"]');
+  const downloadBtn = ui.ctxMenu.querySelector('[data-action="download"]');
+  const deleteBtn = ui.ctxMenu.querySelector('[data-action="delete"]');
+  copyBtn.disabled = item.type !== "file";
+  renameBtn.disabled = false;
+  downloadBtn.disabled = false;
+  deleteBtn.disabled = false;
+  const pad = 6;
+  ui.ctxMenu.style.left = x + "px";
+  ui.ctxMenu.style.top = y + "px";
+  ui.ctxMenu.classList.remove("hidden");
+  const rect = ui.ctxMenu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - pad);
+  const top = Math.min(y, window.innerHeight - rect.height - pad);
+  ui.ctxMenu.style.left = Math.max(pad, left) + "px";
+  ui.ctxMenu.style.top = Math.max(pad, top) + "px";
+}
+
+async function copyAccessUrl(item) {
+  const target = item || selectedItems().find((i) => i.type === "file");
+  if (!target || target.type !== "file") {
+    setStatus("请选择文件后再复制访问地址");
+    return;
+  }
+  if (!state.connId || !state.bucket) return;
+  const res = await api.copyObjectUrl({
+    connId: state.connId,
+    bucket: state.bucket,
+    key: target.key,
+  });
+  if (!res.ok) {
+    alert(res.error || "复制失败");
+    return;
+  }
+  setStatus("已复制访问地址：" + res.url);
 }
 
 function toggleSelect(item, on) {
@@ -484,16 +548,119 @@ async function doDelete() {
   await refreshList();
 }
 
-async function doMkdir() {
-  const name = prompt("新建文件夹名称");
-  if (!name || !name.trim()) return;
-  const prefix = (state.prefix || "") + name.trim().replace(/^\/+|\/+$/g, "") + "/";
-  const res = await api.mkdir({ connId: state.connId, bucket: state.bucket, prefix });
-  if (!res.ok) {
-    alert(res.error || "创建失败");
+function closeMkdirDialog() {
+  ui.mkdirOverlay.classList.add("hidden");
+  ui.mkdirMsg.textContent = "";
+  ui.mkdirMsg.className = "msg";
+  ui.mkdirName.value = "";
+  nameDialog = { mode: "mkdir", item: null };
+}
+
+function openNameDialog(opts) {
+  if (!state.connId || !state.bucket) return;
+  nameDialog = { mode: opts.mode || "mkdir", item: opts.item || null };
+  document.getElementById("mkdir-title").textContent = opts.title || "新建文件夹";
+  document.getElementById("mkdir-label-text").textContent = opts.label || "文件夹名称";
+  document.getElementById("mkdir-ok").textContent = opts.okText || "确定";
+  ui.mkdirName.placeholder = opts.placeholder || "";
+  ui.mkdirMsg.textContent = "";
+  ui.mkdirMsg.className = "msg";
+  ui.mkdirName.value = opts.value || "";
+  ui.mkdirOverlay.classList.remove("hidden");
+  setTimeout(() => {
+    ui.mkdirName.focus();
+    ui.mkdirName.select();
+  }, 0);
+}
+
+function openMkdirDialog() {
+  openNameDialog({
+    mode: "mkdir",
+    title: "新建文件夹",
+    label: "文件夹名称",
+    placeholder: "例如 docs",
+    okText: "创建",
+    value: "",
+  });
+}
+
+function openRenameDialog(item) {
+  if (!item) return;
+  const baseName = String(item.name || "").replace(/\/$/, "");
+  openNameDialog({
+    mode: "rename",
+    item,
+    title: item.type === "folder" ? "重命名文件夹" : "重命名文件",
+    label: "新名称",
+    placeholder: baseName,
+    okText: "重命名",
+    value: baseName,
+  });
+}
+
+async function submitMkdir() {
+  const raw = (ui.mkdirName.value || "").trim();
+  if (!raw) {
+    ui.mkdirMsg.textContent = "请输入名称";
+    ui.mkdirMsg.className = "msg err";
+    ui.mkdirName.focus();
     return;
   }
+  if (/[\\/]/.test(raw) || raw.includes("..")) {
+    ui.mkdirMsg.textContent = "名称不能包含 /、\\ 或 ..";
+    ui.mkdirMsg.className = "msg err";
+    return;
+  }
+  const name = raw.replace(/^\/+|\/+$/g, "");
+  if (!name) {
+    ui.mkdirMsg.textContent = "名称无效";
+    ui.mkdirMsg.className = "msg err";
+    return;
+  }
+
+  if (nameDialog.mode === "rename" && nameDialog.item) {
+    const item = nameDialog.item;
+    if (name === String(item.name || "").replace(/\/$/, "")) {
+      closeMkdirDialog();
+      return;
+    }
+    ui.mkdirMsg.textContent = "正在重命名…";
+    ui.mkdirMsg.className = "msg";
+    const res = await api.rename({
+      connId: state.connId,
+      bucket: state.bucket,
+      key: item.key,
+      newName: name,
+      type: item.type,
+    });
+    if (!res.ok) {
+      ui.mkdirMsg.textContent = res.error || "重命名失败";
+      ui.mkdirMsg.className = "msg err";
+      return;
+    }
+    closeMkdirDialog();
+    state.selected.clear();
+    await refreshList();
+    setStatus("已重命名为 " + name);
+    return;
+  }
+
+  const prefix = (state.prefix || "") + name + "/";
+  ui.mkdirMsg.textContent = "正在创建…";
+  ui.mkdirMsg.className = "msg";
+  const res = await api.mkdir({ connId: state.connId, bucket: state.bucket, prefix });
+  if (!res.ok) {
+    ui.mkdirMsg.textContent = res.error || "创建失败";
+    ui.mkdirMsg.className = "msg err";
+    return;
+  }
+  closeMkdirDialog();
   await refreshList();
+  setStatus("已创建文件夹 " + name);
+}
+
+async function doMkdir() {
+  openMkdirDialog();
 }
 
 function bindDragDrop() {
@@ -543,9 +710,45 @@ function bind() {
     refreshList();
   };
   document.getElementById("btn-mkdir").onclick = doMkdir;
+  document.getElementById("mkdir-ok").onclick = () => submitMkdir();
+  document.getElementById("mkdir-cancel").onclick = closeMkdirDialog;
+  ui.mkdirOverlay.addEventListener("click", (e) => {
+    if (e.target === ui.mkdirOverlay) closeMkdirDialog();
+  });
+  ui.mkdirName.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitMkdir();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeMkdirDialog();
+    }
+  });
   document.getElementById("btn-upload").onclick = () => doUpload();
   document.getElementById("btn-download").onclick = doDownload;
   document.getElementById("btn-delete").onclick = doDelete;
+  ui.ctxMenu.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn || btn.disabled) return;
+    const action = btn.dataset.action;
+    const item = ctxTarget;
+    hideContextMenu();
+    if (action === "copy-url") await copyAccessUrl(item);
+    else if (action === "rename") openRenameDialog(item);
+    else if (action === "download") await doDownload();
+    else if (action === "delete") await doDelete();
+  });
+  document.addEventListener("click", (e) => {
+    if (!ui.ctxMenu.classList.contains("hidden") && !ui.ctxMenu.contains(e.target)) {
+      hideContextMenu();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideContextMenu();
+  });
+  window.addEventListener("blur", hideContextMenu);
+  window.addEventListener("resize", hideContextMenu);
+  ui.browser.addEventListener("scroll", hideContextMenu, true);
   ui.bucket.onchange = () => {
     state.bucket = ui.bucket.value;
     state.prefix = "";

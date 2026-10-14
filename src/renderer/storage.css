@@ -261,6 +261,50 @@ body {
   cursor: pointer;
 }
 
+#ctx-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 160px;
+  background: #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#ctx-menu button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #222;
+}
+
+#ctx-menu button:hover:not(:disabled) {
+  background: #e8f1fb;
+}
+
+#ctx-menu button:disabled {
+  color: #aaa;
+  cursor: default;
+}
+
+#ctx-menu button.danger {
+  color: #b42318;
+}
+
+#ctx-menu button.danger:hover:not(:disabled) {
+  background: #fdecec;
+}
+
 .col-check {
   width: 36px;
 }
@@ -298,7 +342,8 @@ body {
   display: none !important;
 }
 
-#dlg-overlay {
+#dlg-overlay,
+#mkdir-overlay {
   position: fixed;
   inset: 0;
   background: rgba(20, 20, 20, 0.35);
@@ -308,12 +353,37 @@ body {
   z-index: 20;
 }
 
-#dlg {
+#dlg,
+#mkdir-dlg {
   width: min(480px, 92vw);
   background: #fff;
   border-radius: 8px;
   padding: 16px 18px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+}
+
+#mkdir-dlg {
+  width: min(360px, 92vw);
+}
+
+#mkdir-dlg h3 {
+  margin: 0 0 12px;
+}
+
+.mkdir-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #444;
+  margin-bottom: 12px;
+}
+
+.mkdir-label input {
+  font: inherit;
+  border: 1px solid #c7c7c7;
+  border-radius: 4px;
+  padding: 6px 8px;
 }
 
 #dlg h3 {

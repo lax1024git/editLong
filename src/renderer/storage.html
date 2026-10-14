@@ -48,6 +48,28 @@
       <footer id="progress" class="hidden"></footer>
     </main>
 
+    <div id="ctx-menu" class="hidden" role="menu">
+      <button type="button" data-action="copy-url" role="menuitem">复制访问地址</button>
+      <button type="button" data-action="rename" role="menuitem">重命名</button>
+      <button type="button" data-action="download" role="menuitem">下载 / 另存</button>
+      <button type="button" data-action="delete" class="danger" role="menuitem">删除</button>
+    </div>
+
+    <div id="mkdir-overlay" class="hidden">
+      <div id="mkdir-dlg" role="dialog" aria-labelledby="mkdir-title">
+        <h3 id="mkdir-title">新建文件夹</h3>
+        <label class="mkdir-label">
+          <span id="mkdir-label-text">文件夹名称</span>
+          <input id="mkdir-name" type="text" placeholder="例如 docs" autocomplete="off" />
+        </label>
+        <div class="dlg-actions">
+          <button id="mkdir-ok" type="button">确定</button>
+          <button id="mkdir-cancel" type="button">取消</button>
+        </div>
+        <div id="mkdir-msg" class="msg"></div>
+      </div>
+    </div>
+
     <div id="dlg-overlay" class="hidden">
       <div id="dlg">
         <h3 id="dlg-title">连接</h3>
