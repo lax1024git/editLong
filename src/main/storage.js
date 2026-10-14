@@ -10,11 +10,16 @@ const {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  GetBucketLocationCommand,
+  HeadBucketCommand,
 } = require("@aws-sdk/client-s3");
 const { Upload } = require("@aws-sdk/lib-storage");
 const { createWriteStream } = require("fs");
 const { pipeline } = require("stream/promises");
 const { Readable } = require("stream");
+
+/** @type {Map<string, string>} connId:bucket -> region */
+const bucketRegionCache = new Map();
 
 const PROVIDERS = {
   s3: {
@@ -104,24 +109,181 @@ function getConnection(id) {
   return loadConnections().find((c) => c.id === id) || null;
 }
 
-function makeClient(conn) {
+function clearBucketRegionCache(connId) {
+  if (!connId) {
+    bucketRegionCache.clear();
+    return;
+  }
+  const prefix = connId + ":";
+  for (const key of [...bucketRegionCache.keys()]) {
+    if (key.startsWith(prefix)) bucketRegionCache.delete(key);
+  }
+}
+
+function isOfficialAwsS3(conn) {
+  if (conn.provider !== "s3") return false;
+  const ep = (conn.endpoint || "").trim().toLowerCase();
+  if (!ep) return true;
+  // 用户填了官方 AWS 域名时，仍按官方 S3 处理（去掉自定义 endpoint，按桶换区）
+  return /(^|\.)amazonaws\.com(\/|$)/.test(ep) || /(^|\.)amazonaws\.com\.cn(\/|$)/.test(ep);
+}
+
+function normalizeAwsRegion(loc) {
+  if (!loc || loc === "null" || loc === "undefined") return "us-east-1";
+  if (loc === "EU") return "eu-west-1";
+  return String(loc).trim();
+}
+
+function isValidAwsRegion(region) {
+  const r = String(region || "");
+  if (!r || r === "specific" || r === "endpoint") return false;
+  if (r === "us-east-1") return true;
+  return /^[a-z]{2}(?:-[a-z0-9]+)+-\d$/.test(r);
+}
+
+function cacheBucketRegion(connId, bucket, region) {
+  const r = normalizeAwsRegion(region);
+  if (!connId || !bucket || !isValidAwsRegion(r)) return null;
+  bucketRegionCache.set(connId + ":" + bucket, r);
+  return r;
+}
+
+/** 从错误文案/响应头解析桶区域；勿匹配 “region specific endpoint” */
+function extractRegionFromError(err) {
+  if (!err) return null;
+  if (err.BucketRegion && isValidAwsRegion(normalizeAwsRegion(err.BucketRegion))) {
+    return normalizeAwsRegion(err.BucketRegion);
+  }
+  const headers =
+    (err.$metadata && err.$metadata.httpHeaders) ||
+    (err.$response && err.$response.headers) ||
+    null;
+  if (headers) {
+    const br =
+      headers["x-amz-bucket-region"] ||
+      headers["X-Amz-Bucket-Region"] ||
+      headers["x-amz-bucket-region".toLowerCase()];
+    if (br && isValidAwsRegion(normalizeAwsRegion(br))) return normalizeAwsRegion(br);
+  }
+  const text = [err.message, err.Code, err.code, err.name, err.Region, err.region]
+    .filter(Boolean)
+    .join(" ");
+  let m = text.match(/\b([a-z]{2}(?:-[a-z0-9]+)+-\d)\s+location constraint/i);
+  if (m && isValidAwsRegion(m[1])) return normalizeAwsRegion(m[1]);
+  m = text.match(/IllegalLocationConstraintException[\s\S]*?\b([a-z]{2}(?:-[a-z0-9]+)+-\d)\b/i);
+  if (m && isValidAwsRegion(m[1])) return normalizeAwsRegion(m[1]);
+  m = text.match(/\b(mx-central-\d|af-south-\d|ap-[a-z0-9]+-\d|eu-[a-z0-9]+-\d|us-[a-z0-9]+-\d|sa-[a-z0-9]+-\d|ca-[a-z0-9]+-\d|me-[a-z0-9]+-\d|il-[a-z0-9]+-\d)\b/i);
+  if (m && isValidAwsRegion(m[1])) return normalizeAwsRegion(m[1]);
+  return null;
+}
+
+function makeClient(conn, opts = {}) {
   const provider = PROVIDERS[conn.provider] || PROVIDERS.s3;
-  const region = conn.region || provider.region || "us-east-1";
-  const endpoint = (conn.endpoint || provider.endpoint || "").trim() || undefined;
+  const region = opts.region || conn.region || provider.region || "us-east-1";
+  const customEndpoint = (conn.endpoint || "").trim();
+  // 官方 AWS S3：不要带自定义 endpoint，否则跨区桶会报 location constraint 不兼容
+  const endpoint = isOfficialAwsS3(conn)
+    ? undefined
+    : customEndpoint || (provider.endpoint || "").trim() || undefined;
   const forcePathStyle =
     typeof conn.forcePathStyle === "boolean" ? conn.forcePathStyle : Boolean(provider.forcePathStyle);
   if (!conn.accessKeyId || !conn.secretAccessKey) {
     throw new Error("缺少 Access Key / Secret Key");
   }
-  return new S3Client({
+  const config = {
     region,
-    endpoint,
     forcePathStyle,
     credentials: {
       accessKeyId: conn.accessKeyId,
       secretAccessKey: conn.secretAccessKey,
     },
-  });
+  };
+  if (endpoint) config.endpoint = endpoint;
+  // AWS SDK：跟随区域重定向；opt-in 区域（如 mx-central-1）仍需先解析正确 Region
+  if (isOfficialAwsS3(conn)) config.followRegionRedirects = true;
+  return new S3Client(config);
+}
+
+async function resolveAwsBucketRegion(conn, bucket) {
+  if (!bucket) return conn.region || "us-east-1";
+  const cacheKey = conn.id + ":" + bucket;
+  if (bucketRegionCache.has(cacheKey)) {
+    const cached = bucketRegionCache.get(cacheKey);
+    if (isValidAwsRegion(cached)) return cached;
+    bucketRegionCache.delete(cacheKey);
+  }
+
+  const probe = makeClient(conn, { region: "us-east-1" });
+
+  // 1) HeadBucket（AWS 推荐）：响应带 BucketRegion
+  try {
+    const out = await probe.send(new HeadBucketCommand({ Bucket: bucket }));
+    const r = cacheBucketRegion(conn.id, bucket, out.BucketRegion);
+    if (r) return r;
+  } catch (err) {
+    const r = cacheBucketRegion(conn.id, bucket, extractRegionFromError(err));
+    if (r) return r;
+  }
+
+  // 2) GetBucketLocation
+  try {
+    const out = await probe.send(new GetBucketLocationCommand({ Bucket: bucket }));
+    const r = cacheBucketRegion(conn.id, bucket, normalizeAwsRegion(out.LocationConstraint));
+    if (r) return r;
+  } catch (err) {
+    const r = cacheBucketRegion(conn.id, bucket, extractRegionFromError(err));
+    if (r) return r;
+  }
+
+  // 不缓存猜测值，避免把错误 Region 钉死；下次可从操作错误里学到
+  return conn.region || "us-east-1";
+}
+
+async function getClientForBucket(conn, bucket) {
+  if (!conn) throw new Error("连接不存在");
+  if (!bucket || !isOfficialAwsS3(conn)) return makeClient(conn);
+  const region = await resolveAwsBucketRegion(conn, bucket);
+  return makeClient(conn, { region });
+}
+
+/** 官方 S3：区域不对时从错误里学到真实区域并自动重试一次 */
+async function withBucketClient(conn, bucket, run) {
+  const client = await getClientForBucket(conn, bucket);
+  try {
+    return await run(client);
+  } catch (err) {
+    if (!isOfficialAwsS3(conn) || !bucket) throw err;
+    const learned = extractRegionFromError(err);
+    if (!learned) throw err;
+    const cacheKey = conn.id + ":" + bucket;
+    if (bucketRegionCache.get(cacheKey) === learned) throw err;
+    cacheBucketRegion(conn.id, bucket, learned);
+    const retryClient = makeClient(conn, { region: learned });
+    return await run(retryClient);
+  }
+}
+
+function friendlyS3Error(err) {
+  const msg = String(err && (err.message || err) || "未知错误");
+  if (/location constraint is incompatible|PermanentRedirect|AuthorizationHeaderMalformed|IllegalLocationConstraintException/i.test(msg)) {
+    const region = extractRegionFromError(err);
+    return (
+      msg +
+      "\n提示：该 Bucket 所在区域与当前请求端点不一致" +
+      (region ? `（检测到 ${region}）` : "") +
+      "。已支持按桶自动切换区域；请重新打开该桶，或把连接 Region 改成桶所在区。"
+    );
+  }
+  if (/specified key does not exist|NoSuchKey/i.test(msg)) {
+    return (
+      msg +
+      "\n提示：部分兼容端点不支持「列出全部 Bucket」。请在连接里填写默认 Bucket，或检查 Endpoint 是否为服务根地址（不要带桶名路径）。"
+    );
+  }
+  if (/NoSuchBucket/i.test(msg)) {
+    return msg + "\n提示：Bucket 名称不存在，或当前密钥无权访问。";
+  }
+  return msg;
 }
 
 function normalizePrefix(prefix) {
@@ -152,44 +314,57 @@ async function streamToFile(body, dest) {
 async function listDir(connId, bucket, prefix) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
-  const client = makeClient(conn);
   const Pref = normalizePrefix(prefix);
-  const folders = [];
-  const files = [];
-  let token;
-  do {
-    const out = await client.send(
+  return withBucketClient(conn, bucket, async (client) => {
+    const folders = [];
+    const files = [];
+    let token;
+    do {
+      const out = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: Pref || undefined,
+          Delimiter: "/",
+          ContinuationToken: token,
+          MaxKeys: 1000,
+        }),
+      );
+      (out.CommonPrefixes || []).forEach((cp) => {
+        const full = cp.Prefix || "";
+        const name = full.slice(Pref.length).replace(/\/$/, "");
+        if (name) folders.push({ type: "folder", key: full, name });
+      });
+      (out.Contents || []).forEach((obj) => {
+        if (!obj.Key || obj.Key === Pref) return;
+        const name = obj.Key.slice(Pref.length);
+        if (!name || name.includes("/")) return;
+        files.push({
+          type: "file",
+          key: obj.Key,
+          name,
+          size: Number(obj.Size || 0),
+          lastModified: obj.LastModified ? new Date(obj.LastModified).toISOString() : "",
+          etag: obj.ETag || "",
+        });
+      });
+      token = out.IsTruncated ? out.NextContinuationToken : undefined;
+    } while (token);
+    folders.sort((a, b) => a.name.localeCompare(b.name, "zh"));
+    files.sort((a, b) => a.name.localeCompare(b.name, "zh"));
+    return { prefix: Pref, folders, files };
+  });
+}
+
+async function probeBucket(conn, bucket) {
+  await withBucketClient(conn, bucket, async (client) => {
+    await client.send(
       new ListObjectsV2Command({
         Bucket: bucket,
-        Prefix: Pref || undefined,
-        Delimiter: "/",
-        ContinuationToken: token,
-        MaxKeys: 1000,
+        MaxKeys: 1,
       }),
     );
-    (out.CommonPrefixes || []).forEach((cp) => {
-      const full = cp.Prefix || "";
-      const name = full.slice(Pref.length).replace(/\/$/, "");
-      if (name) folders.push({ type: "folder", key: full, name });
-    });
-    (out.Contents || []).forEach((obj) => {
-      if (!obj.Key || obj.Key === Pref) return;
-      const name = obj.Key.slice(Pref.length);
-      if (!name || name.includes("/")) return;
-      files.push({
-        type: "file",
-        key: obj.Key,
-        name,
-        size: Number(obj.Size || 0),
-        lastModified: obj.LastModified ? new Date(obj.LastModified).toISOString() : "",
-        etag: obj.ETag || "",
-      });
-    });
-    token = out.IsTruncated ? out.NextContinuationToken : undefined;
-  } while (token);
-  folders.sort((a, b) => a.name.localeCompare(b.name, "zh"));
-  files.sort((a, b) => a.name.localeCompare(b.name, "zh"));
-  return { prefix: Pref, folders, files };
+  });
+  return true;
 }
 
 async function listBuckets(connId) {
@@ -198,83 +373,99 @@ async function listBuckets(connId) {
   const client = makeClient(conn);
   try {
     const out = await client.send(new ListBucketsCommand({}));
-    return (out.Buckets || []).map((b) => ({
-      name: b.Name,
-      creationDate: b.CreationDate ? new Date(b.CreationDate).toISOString() : "",
-    }));
+    return (out.Buckets || []).map((b) => {
+      if (b.Name && b.BucketRegion) {
+        cacheBucketRegion(conn.id, b.Name, b.BucketRegion);
+      }
+      return {
+        name: b.Name,
+        creationDate: b.CreationDate ? new Date(b.CreationDate).toISOString() : "",
+        region: b.BucketRegion ? normalizeAwsRegion(b.BucketRegion) : "",
+      };
+    });
   } catch (err) {
+    // 兼容端点常不支持 ListBuckets；若配置了默认桶则探测后直接用
     if (conn.bucket) {
-      return [{ name: conn.bucket, creationDate: "" }];
+      try {
+        await probeBucket(conn, conn.bucket);
+        return [{ name: conn.bucket, creationDate: "", region: "" }];
+      } catch (probeErr) {
+        throw new Error(friendlyS3Error(probeErr));
+      }
     }
-    throw err;
+    throw new Error(friendlyS3Error(err));
   }
 }
 
 async function uploadFile(connId, bucket, key, localPath, onProgress) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
-  const client = makeClient(conn);
   const stat = await fsp.stat(localPath);
-  const body = fs.createReadStream(localPath);
-  const upload = new Upload({
-    client,
-    params: {
-      Bucket: bucket,
-      Key: key,
-      Body: body,
-      ContentLength: stat.size,
-    },
+  return withBucketClient(conn, bucket, async (client) => {
+    const body = fs.createReadStream(localPath);
+    const upload = new Upload({
+      client,
+      params: {
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ContentLength: stat.size,
+      },
+    });
+    upload.on("httpUploadProgress", (p) => {
+      if (onProgress && p.total) onProgress({ loaded: p.loaded || 0, total: p.total });
+    });
+    await upload.done();
+    return { key, size: stat.size };
   });
-  upload.on("httpUploadProgress", (p) => {
-    if (onProgress && p.total) onProgress({ loaded: p.loaded || 0, total: p.total });
-  });
-  await upload.done();
-  return { key, size: stat.size };
 }
 
 async function downloadObject(connId, bucket, key, destPath) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
-  const client = makeClient(conn);
-  const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-  await streamToFile(out.Body, destPath);
-  const stat = await fsp.stat(destPath);
-  return { path: destPath, size: stat.size };
+  return withBucketClient(conn, bucket, async (client) => {
+    const out = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    await streamToFile(out.Body, destPath);
+    const stat = await fsp.stat(destPath);
+    return { path: destPath, size: stat.size };
+  });
 }
 
 async function deleteKeys(connId, bucket, keys) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
-  const client = makeClient(conn);
   const list = (keys || []).filter(Boolean);
   if (!list.length) return { deleted: 0 };
-  if (list.length === 1) {
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: list[0] }));
-    return { deleted: 1 };
-  }
-  await client.send(
-    new DeleteObjectsCommand({
-      Bucket: bucket,
-      Delete: { Objects: list.map((Key) => ({ Key })), Quiet: true },
-    }),
-  );
-  return { deleted: list.length };
+  return withBucketClient(conn, bucket, async (client) => {
+    if (list.length === 1) {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: list[0] }));
+      return { deleted: 1 };
+    }
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: list.map((Key) => ({ Key })), Quiet: true },
+      }),
+    );
+    return { deleted: list.length };
+  });
 }
 
 async function createFolder(connId, bucket, prefix) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
-  const client = makeClient(conn);
   const key = normalizePrefix(prefix);
   if (!key) throw new Error("文件夹名无效");
-  await client.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: Buffer.alloc(0),
-    }),
-  );
-  return { key };
+  return withBucketClient(conn, bucket, async (client) => {
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: Buffer.alloc(0),
+      }),
+    );
+    return { key };
+  });
 }
 
 async function collectPrefixKeys(client, bucket, prefix) {
@@ -301,22 +492,23 @@ async function collectPrefixKeys(client, bucket, prefix) {
 async function deleteFolder(connId, bucket, prefix) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
-  const client = makeClient(conn);
-  const keys = await collectPrefixKeys(client, bucket, prefix);
-  if (!keys.length) {
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: normalizePrefix(prefix) }));
-    return { deleted: 1 };
-  }
-  for (let i = 0; i < keys.length; i += 1000) {
-    const chunk = keys.slice(i, i + 1000);
-    await client.send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
-      }),
-    );
-  }
-  return { deleted: keys.length };
+  return withBucketClient(conn, bucket, async (client) => {
+    const keys = await collectPrefixKeys(client, bucket, prefix);
+    if (!keys.length) {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: normalizePrefix(prefix) }));
+      return { deleted: 1 };
+    }
+    for (let i = 0; i < keys.length; i += 1000) {
+      const chunk = keys.slice(i, i + 1000);
+      await client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: { Objects: chunk.map((Key) => ({ Key })), Quiet: true },
+        }),
+      );
+    }
+    return { deleted: keys.length };
+  });
 }
 
 async function walkLocalDir(dir) {
@@ -409,11 +601,13 @@ function registerStorage(app) {
       list.push(item);
     }
     saveConnections(list);
+    clearBucketRegionCache(item.id);
     return publicConnection(item);
   });
   ipcMain.handle("storage:delete-connection", (_e, id) => {
     const list = loadConnections().filter((c) => c.id !== id);
     saveConnections(list);
+    clearBucketRegionCache(id);
     return { ok: true };
   });
   ipcMain.handle("storage:test-connection", async (_e, id) => {
@@ -421,14 +615,14 @@ function registerStorage(app) {
       const buckets = await listBuckets(id);
       return { ok: true, buckets: buckets.length };
     } catch (err) {
-      return { ok: false, error: String(err.message || err) };
+      return { ok: false, error: friendlyS3Error(err) };
     }
   });
   ipcMain.handle("storage:list-buckets", async (_e, connId) => {
     try {
       return { ok: true, buckets: await listBuckets(connId) };
     } catch (err) {
-      return { ok: false, error: String(err.message || err) };
+      return { ok: false, error: friendlyS3Error(err) };
     }
   });
   ipcMain.handle("storage:list", async (_e, { connId, bucket, prefix }) => {
@@ -436,14 +630,14 @@ function registerStorage(app) {
       const data = await listDir(connId, bucket, prefix);
       return { ok: true, ...data };
     } catch (err) {
-      return { ok: false, error: String(err.message || err) };
+      return { ok: false, error: friendlyS3Error(err) };
     }
   });
   ipcMain.handle("storage:mkdir", async (_e, { connId, bucket, prefix }) => {
     try {
       return { ok: true, ...(await createFolder(connId, bucket, prefix)) };
     } catch (err) {
-      return { ok: false, error: String(err.message || err) };
+      return { ok: false, error: friendlyS3Error(err) };
     }
   });
   ipcMain.handle("storage:delete", async (_e, { connId, bucket, keys, folders }) => {
@@ -457,7 +651,7 @@ function registerStorage(app) {
       }
       return { ok: true, deleted };
     } catch (err) {
-      return { ok: false, error: String(err.message || err) };
+      return { ok: false, error: friendlyS3Error(err) };
     }
   });
   ipcMain.handle("storage:pick-upload", async (_e, { connId, bucket, prefix }) => {
@@ -499,7 +693,7 @@ function registerStorage(app) {
       const destRoot = result.filePaths[0];
       const saved = [];
       const conn = getConnection(connId);
-      const client = makeClient(conn);
+      if (!conn) throw new Error("连接不存在");
 
       for (const item of list) {
         if (item.type === "file") {
@@ -509,7 +703,9 @@ function registerStorage(app) {
           saved.push(dest);
         } else {
           const folderPrefix = normalizePrefix(item.key || item.prefix);
-          const keys = await collectPrefixKeys(client, bucket, folderPrefix);
+          const keys = await withBucketClient(conn, bucket, (client) =>
+            collectPrefixKeys(client, bucket, folderPrefix),
+          );
           for (let i = 0; i < keys.length; i++) {
             const key = keys[i];
             if (key.endsWith("/") && keys.length > 1) continue;
@@ -530,8 +726,9 @@ function registerStorage(app) {
       sendToStorage("storage:progress", { phase: "done" });
       return { ok: true, paths: saved };
     } catch (err) {
-      sendToStorage("storage:progress", { phase: "error", error: String(err.message || err) });
-      return { ok: false, error: String(err.message || err) };
+      const msg = friendlyS3Error(err);
+      sendToStorage("storage:progress", { phase: "error", error: msg });
+      return { ok: false, error: msg };
     }
   });
   ipcMain.handle("storage:reveal", (_e, filePath) => {
@@ -582,8 +779,9 @@ function registerStorage(app) {
       sendToStorage("storage:progress", { phase: "done", loaded: done, total: jobs.length });
       return { ok: true, uploaded: done };
     } catch (err) {
-      sendToStorage("storage:progress", { phase: "error", error: String(err.message || err) });
-      return { ok: false, error: String(err.message || err) };
+      const msg = friendlyS3Error(err);
+      sendToStorage("storage:progress", { phase: "error", error: msg });
+      return { ok: false, error: msg };
     }
   }
 
