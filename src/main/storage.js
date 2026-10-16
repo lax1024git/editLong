@@ -296,6 +296,92 @@ function encodeObjectKey(key) {
     .join("/");
 }
 
+/** 常见扩展名 → Content-Type（上传时写入对象元数据） */
+const CONTENT_TYPE_BY_EXT = {
+  html: "text/html; charset=utf-8",
+  htm: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+  mjs: "text/javascript; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  map: "application/json; charset=utf-8",
+  xml: "application/xml; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  md: "text/markdown; charset=utf-8",
+  csv: "text/csv; charset=utf-8",
+  tsv: "text/tab-separated-values; charset=utf-8",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  ico: "image/x-icon",
+  bmp: "image/bmp",
+  tif: "image/tiff",
+  tiff: "image/tiff",
+  avif: "image/avif",
+  heic: "image/heic",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  flac: "audio/flac",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  avi: "video/x-msvideo",
+  mkv: "video/x-matroska",
+  m3u8: "application/vnd.apple.mpegurl",
+  ts: "video/mp2t",
+  pdf: "application/pdf",
+  zip: "application/zip",
+  gz: "application/gzip",
+  tar: "application/x-tar",
+  "7z": "application/x-7z-compressed",
+  rar: "application/vnd.rar",
+  wasm: "application/wasm",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+  eot: "application/vnd.ms-fontobject",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  apk: "application/vnd.android.package-archive",
+  yaml: "text/yaml; charset=utf-8",
+  yml: "text/yaml; charset=utf-8",
+  ini: "text/plain; charset=utf-8",
+  conf: "text/plain; charset=utf-8",
+  log: "text/plain; charset=utf-8",
+  sh: "text/x-shellscript; charset=utf-8",
+  bat: "text/plain; charset=utf-8",
+  cmd: "text/plain; charset=utf-8",
+  py: "text/x-python; charset=utf-8",
+  java: "text/x-java-source; charset=utf-8",
+  c: "text/x-c; charset=utf-8",
+  cpp: "text/x-c; charset=utf-8",
+  h: "text/x-c; charset=utf-8",
+  sql: "application/sql; charset=utf-8",
+};
+
+function guessContentType(...names) {
+  for (const name of names) {
+    if (!name) continue;
+    const base = String(name).split(/[\\/]/).pop() || "";
+    const dot = base.lastIndexOf(".");
+    if (dot < 0 || dot === base.length - 1) continue;
+    const ext = base.slice(dot + 1).toLowerCase();
+    if (CONTENT_TYPE_BY_EXT[ext]) return CONTENT_TYPE_BY_EXT[ext];
+  }
+  return "application/octet-stream";
+}
+
 /** 根据连接配置拼出对象的 HTTP 访问地址（公开读才可直接打开） */
 async function buildObjectUrl(connId, bucket, key) {
   const conn = getConnection(connId);
@@ -463,6 +549,7 @@ async function uploadFile(connId, bucket, key, localPath, onProgress) {
   const conn = getConnection(connId);
   if (!conn) throw new Error("连接不存在");
   const stat = await fsp.stat(localPath);
+  const contentType = guessContentType(key, localPath);
   return withBucketClient(conn, bucket, async (client) => {
     const body = fs.createReadStream(localPath);
     const upload = new Upload({
@@ -472,13 +559,14 @@ async function uploadFile(connId, bucket, key, localPath, onProgress) {
         Key: key,
         Body: body,
         ContentLength: stat.size,
+        ContentType: contentType,
       },
     });
     upload.on("httpUploadProgress", (p) => {
       if (onProgress && p.total) onProgress({ loaded: p.loaded || 0, total: p.total });
     });
     await upload.done();
-    return { key, size: stat.size };
+    return { key, size: stat.size, contentType };
   });
 }
 
