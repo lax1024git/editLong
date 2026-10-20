@@ -46,4 +46,18 @@ contextBridge.exposeInMainWorld("editlong", {
   startSnip: () => ipcRenderer.invoke("snip:start"),
   startRecord: () => ipcRenderer.invoke("record:start"),
   openStorage: () => ipcRenderer.invoke("storage:open-window"),
+  getOnTop: () => ipcRenderer.invoke("window:get-on-top"),
+  setOnTop: (on) => ipcRenderer.invoke("window:set-on-top", on),
+  toggleOnTop: () => ipcRenderer.invoke("window:toggle-on-top"),
+  getWindowId: () => ipcRenderer.invoke("window:get-id"),
+  dragBeginTab: (payload) => ipcRenderer.invoke("tabs:drag-begin", payload),
+  dragFinishTab: () => ipcRenderer.invoke("tabs:drag-finish"),
+  tearOffTab: (payload) => ipcRenderer.invoke("tabs:tear-off", payload),
+  attachTab: (payload) => ipcRenderer.invoke("tabs:attach", payload),
+  onWindowInit: (cb) => {
+    ipcRenderer.on("window-init", (_e, data) => cb(data));
+  },
+  onTabAttach: (cb) => {
+    ipcRenderer.on("tab-attach", (_e, data) => cb(data));
+  },
 });

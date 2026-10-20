@@ -29,6 +29,11 @@ const state = {
 
 const tabViews = new Map();
 let tabList = [];
+let windowId = null;
+let dragTabId = null;
+let dragDropped = false;
+const TAB_MIME = "application/x-editlong-tab";
+const TAB_TEXT_PREFIX = "editlong-tab:";
 
 const ui = {
   welcome: document.getElementById("welcome"),
@@ -220,15 +225,44 @@ function tabIsDirty(id) {
   return Boolean(tabViews.get(id)?.dirty);
 }
 
+function captureViewState(tabId) {
+  if (tabId && tabId === state.tabId) saveCurrentView();
+  const cached = tabId ? tabViews.get(tabId) : null;
+  return cached
+    ? {
+        editorValue: cached.editorValue,
+        dirty: cached.dirty,
+        firstLine: cached.firstLine,
+        firstRow: cached.firstRow,
+        mode: cached.mode,
+        language: cached.language,
+        wrap: cached.wrap,
+        match: cached.match,
+        selStart: cached.selStart,
+        selEnd: cached.selEnd,
+      }
+    : null;
+}
+
+function pointInTabbar(clientX, clientY) {
+  if (!ui.tabbar || ui.tabbar.classList.contains("hidden")) return false;
+  const r = ui.tabbar.getBoundingClientRect();
+  return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+}
+
 function paintTabs() {
   if (!ui.tabbar || !ui.tabstrip) return;
-  ui.tabbar.classList.toggle("hidden", tabList.length === 0);
+  // 空窗口也保留标签栏，便于从其它窗口拖回
+  ui.tabbar.classList.remove("hidden");
+  ui.tabbar.classList.toggle("empty", tabList.length === 0);
   ui.tabstrip.replaceChildren();
   tabList.forEach((tab) => {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "tab" + (tab.id === state.tabId || tab.active ? " active" : "");
     el.title = tab.path || tab.title;
+    el.draggable = true;
+    el.dataset.tabId = tab.id;
     const title = document.createElement("span");
     title.className = "tab-title";
     title.textContent = (tabIsDirty(tab.id) ? "* " : "") + tab.title;
@@ -252,10 +286,133 @@ function paintTabs() {
         requestClose(tab.id);
       }
     });
+    el.addEventListener("dragstart", (e) => {
+      dragTabId = tab.id;
+      dragDropped = false;
+      el.classList.add("dragging");
+      if (tab.id === state.tabId) saveCurrentView();
+      const viewState = captureViewState(tab.id);
+      const payload = JSON.stringify({
+        tabId: tab.id,
+        fromWindowId: windowId,
+        viewState,
+      });
+      e.dataTransfer.setData(TAB_MIME, payload);
+      e.dataTransfer.setData("text/plain", TAB_TEXT_PREFIX + payload);
+      e.dataTransfer.effectAllowed = "move";
+      if (api.dragBeginTab) api.dragBeginTab({ tabId: tab.id, viewState });
+    });
+    el.addEventListener("dragend", async (e) => {
+      el.classList.remove("dragging");
+      const id = dragTabId;
+      const dropped = dragDropped;
+      dragTabId = null;
+      dragDropped = false;
+      if (!id || dropped || !api.tearOffTab) {
+        if (api.dragFinishTab) api.dragFinishTab();
+        return;
+      }
+      if (pointInTabbar(e.clientX, e.clientY)) {
+        if (api.dragFinishTab) api.dragFinishTab();
+        return;
+      }
+      // 拖到其它窗口的 drop 已处理；仍在本窗口外则撕出新窗
+      const viewState = captureViewState(id);
+      tabViews.delete(id);
+      const res = await api.tearOffTab({
+        tabId: id,
+        screenX: e.screenX,
+        screenY: e.screenY,
+        viewState,
+      });
+      if (!res || !res.ok) {
+        // 可能已被其它窗口 attach，恢复本地缓存无妨
+        if (viewState) tabViews.set(id, viewState);
+      }
+      if (api.dragFinishTab) api.dragFinishTab();
+    });
     ui.tabstrip.appendChild(el);
   });
   const activeEl = ui.tabstrip.querySelector(".tab.active");
   if (activeEl) activeEl.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function parseTabDragPayload(dataTransfer) {
+  if (!dataTransfer) return null;
+  let raw = "";
+  try {
+    raw = dataTransfer.getData(TAB_MIME) || "";
+  } catch {
+    raw = "";
+  }
+  if (!raw) {
+    try {
+      const text = dataTransfer.getData("text/plain") || "";
+      if (text.startsWith(TAB_TEXT_PREFIX)) raw = text.slice(TAB_TEXT_PREFIX.length);
+    } catch {
+      raw = "";
+    }
+  }
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      /* fall through — 可能依赖主进程 drag session */
+    }
+  }
+  return { tabId: null, viewState: null };
+}
+
+function isTabDrag(dataTransfer) {
+  if (!dataTransfer) return false;
+  const types = [...(dataTransfer.types || [])];
+  if (types.includes(TAB_MIME)) return true;
+  if (types.includes("text/plain") || types.includes("Text")) return true;
+  // 跨窗口时 types 可能为空，仍允许尝试（由 drop / 主进程 session 兜底）
+  return types.length === 0;
+}
+
+function bindTabbarDrop() {
+  if (!ui.tabbar) return;
+  const onDragOver = (e) => {
+    if (!isTabDrag(e.dataTransfer)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    ui.tabbar.classList.add("drag-over");
+  };
+  ui.tabbar.addEventListener("dragenter", onDragOver);
+  ui.tabbar.addEventListener("dragover", onDragOver);
+  ui.tabbar.addEventListener("dragleave", (e) => {
+    if (e.target === ui.tabbar || !ui.tabbar.contains(e.relatedTarget)) {
+      ui.tabbar.classList.remove("drag-over");
+    }
+  });
+  ui.tabbar.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    ui.tabbar.classList.remove("drag-over");
+    if (!api.attachTab) return;
+    const payload = parseTabDragPayload(e.dataTransfer) || {};
+    dragDropped = true;
+    if (payload.tabId && payload.viewState) {
+      tabViews.set(payload.tabId, payload.viewState);
+    }
+    let index = tabList.length;
+    const tabs = [...ui.tabstrip.querySelectorAll(".tab")];
+    for (let i = 0; i < tabs.length; i++) {
+      const r = tabs[i].getBoundingClientRect();
+      if (e.clientX < r.left + r.width / 2) {
+        index = i;
+        break;
+      }
+    }
+    const res = await api.attachTab({
+      tabId: payload.tabId || undefined,
+      targetWindowId: windowId,
+      index,
+      viewState: payload.viewState || null,
+    });
+    if (!res || !res.ok) dragDropped = false;
+  });
 }
 
 async function switchTab(id) {
@@ -779,6 +936,23 @@ document.getElementById("btn-goto").onclick = () => showGoto(true);
 document.getElementById("btn-snip").onclick = () => api.startSnip();
 document.getElementById("btn-record").onclick = () => api.startRecord();
 document.getElementById("btn-storage").onclick = () => api.openStorage && api.openStorage();
+
+function applyOnTopUi(on) {
+  const btn = document.getElementById("btn-ontop");
+  if (!btn) return;
+  btn.classList.toggle("active", Boolean(on));
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.title = on ? "取消置顶" : "窗口置顶";
+}
+
+document.getElementById("btn-ontop").onclick = async () => {
+  if (!api.toggleOnTop) return;
+  const on = await api.toggleOnTop();
+  applyOnTopUi(on);
+};
+if (api.getOnTop) {
+  api.getOnTop().then(applyOnTopUi).catch(() => {});
+}
 document.getElementById("find-next").onclick = () => runFind(false);
 document.getElementById("find-prev").onclick = () => runFind(true);
 document.getElementById("find-close").onclick = () => showFind(false);
@@ -882,10 +1056,40 @@ if (ui.tabstrip) {
   }, { passive: false });
 }
 
+bindTabbarDrop();
+
+if (api.onWindowInit) {
+  api.onWindowInit((data) => {
+    if (data && data.windowId) windowId = data.windowId;
+  });
+}
+if (api.getWindowId) {
+  api.getWindowId().then((id) => {
+    if (id) windowId = id;
+  });
+}
+if (api.onTabAttach) {
+  api.onTabAttach(async (data) => {
+    if (!data || !data.meta) return;
+    if (data.viewState && data.meta.tabId) {
+      tabViews.set(data.meta.tabId, data.viewState);
+    }
+    await onOpened(data.meta);
+  });
+}
+
 api.onFileOpened(onOpened);
 api.onTabsChanged((data) => {
   tabList = data && Array.isArray(data.tabs) ? data.tabs : [];
+  if (data && data.windowId) windowId = data.windowId;
   if (data && data.activeId) state.tabId = data.activeId;
+  else if (data && (data.activeId === null || data.activeId === undefined) && tabList.length === 0) {
+    state.tabId = null;
+  }
+  const live = new Set(tabList.map((t) => t.id));
+  for (const id of [...tabViews.keys()]) {
+    if (!live.has(id)) tabViews.delete(id);
+  }
   paintTabs();
 });
 api.onIndexProgress((meta) => {
@@ -907,6 +1111,8 @@ api.onMenu((name) => {
   if (name === "lower") transformSelection((s) => s.toLowerCase());
   if (name === "wrap-on") applyWrap(true);
   if (name === "wrap-off") applyWrap(false);
+  if (name === "on-top") applyOnTopUi(true);
+  if (name === "on-top-off") applyOnTopUi(false);
   if (name.startsWith("language:")) {
     state.language = name.slice("language:".length);
     if (ui.stLang) ui.stLang.textContent = LANG_LABELS[state.language] || "纯文本";

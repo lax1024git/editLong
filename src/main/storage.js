@@ -69,6 +69,8 @@ const PROVIDERS = {
 let settingsPath = "";
 let storageWin = null;
 let seq = 0;
+/** @type {(() => import("electron").BrowserWindow | null) | null} */
+let getMainWindow = null;
 
 function connectionsFile() {
   return path.join(settingsPath, "storage-connections.json");
@@ -788,10 +790,14 @@ function sendToStorage(channel, payload) {
 
 function createStorageWindow() {
   if (storageWin && !storageWin.isDestroyed()) {
+    if (storageWin.isMinimized()) storageWin.restore();
     storageWin.show();
     storageWin.focus();
     return storageWin;
   }
+  const parent = typeof getMainWindow === "function" ? getMainWindow() : null;
+  const parentOk = parent && !parent.isDestroyed();
+  const iconPath = path.join(__dirname, "..", "..", "build", "icon.ico");
   storageWin = new BrowserWindow({
     width: 1180,
     height: 760,
@@ -800,6 +806,11 @@ function createStorageWindow() {
     title: "对象存储 - EditLong",
     backgroundColor: "#f3f3f3",
     show: false,
+    // 挂到主窗口下：同进程子窗口，任务栏与主程序归为一组
+    parent: parentOk ? parent : undefined,
+    modal: false,
+    autoHideMenuBar: true,
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: path.join(__dirname, "..", "preload-storage.js"),
       contextIsolation: true,
@@ -815,8 +826,16 @@ function createStorageWindow() {
   return storageWin;
 }
 
-function registerStorage(app) {
+function closeStorageWindow() {
+  if (storageWin && !storageWin.isDestroyed()) {
+    storageWin.close();
+  }
+  storageWin = null;
+}
+
+function registerStorage(app, opts = {}) {
   settingsPath = app.getPath("userData");
+  getMainWindow = typeof opts.getMainWindow === "function" ? opts.getMainWindow : null;
 
   ipcMain.handle("storage:providers", () => Object.values(PROVIDERS));
   ipcMain.handle("storage:list-connections", () => loadConnections().map(publicConnection));
@@ -1064,7 +1083,7 @@ function registerStorage(app) {
     }
   }
 
-  return { open: createStorageWindow, PROVIDERS };
+  return { open: createStorageWindow, close: closeStorageWindow, PROVIDERS };
 }
 
-module.exports = { registerStorage, createStorageWindow, PROVIDERS };
+module.exports = { registerStorage, createStorageWindow, closeStorageWindow, PROVIDERS };
