@@ -269,6 +269,21 @@ body {
   min-height: 0;
 }
 
+#edit-gutter {
+  overflow: hidden;
+  padding: 0 8px 0 0;
+  flex-shrink: 0;
+}
+
+#edit-gutter-inner {
+  will-change: transform;
+}
+
+#edit-gutter-inner div {
+  height: var(--editor-line-height);
+  line-height: var(--editor-line-height);
+}
+
 #editor {
   flex: 1;
   min-width: 0;
@@ -280,7 +295,7 @@ body {
   padding: 8px 12px;
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
-  line-height: 1.5;
+  line-height: var(--editor-line-height);
   white-space: pre;
   overflow: auto;
 }

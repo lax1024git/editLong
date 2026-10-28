@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("ssh", {
   listConnections: () => ipcRenderer.invoke("ssh:list-connections"),
   getConnection: (id) => ipcRenderer.invoke("ssh:get-connection", id),
   saveConnection: (payload) => ipcRenderer.invoke("ssh:save-connection", payload),
+  duplicateConnection: (id) => ipcRenderer.invoke("ssh:duplicate-connection", id),
+  reorderConnections: (ids) => ipcRenderer.invoke("ssh:reorder-connections", ids),
   deleteConnection: (id) => ipcRenderer.invoke("ssh:delete-connection", id),
   pickKey: () => ipcRenderer.invoke("ssh:pick-key"),
   connect: (id) => ipcRenderer.invoke("ssh:connect", id),

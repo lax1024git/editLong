@@ -40,6 +40,8 @@ let ctxTarget = null;
 let nameDialog = { mode: "mkdir", item: null };
 let term = null;
 let fitAddon = null;
+let dragConnId = null;
+let connDragged = false;
 
 function formatSize(n) {
   n = Number(n) || 0;
@@ -220,16 +222,37 @@ function paintConnections() {
       "conn-item" +
       (c.id === state.connId ? " active" : "") +
       (online ? " online" : "");
+    el.draggable = true;
+    el.dataset.id = c.id;
     el.innerHTML =
       '<span class="dot"></span><div class="meta"><div class="name"></div><div class="sub"></div></div>' +
-      '<div class="ops"><button type="button" data-act="edit" title="编辑">✎</button>' +
+      '<div class="ops"><button type="button" data-act="copy" title="复制">⧉</button>' +
+      '<button type="button" data-act="edit" title="编辑">✎</button>' +
       '<button type="button" data-act="del" title="删除">×</button></div>';
     el.querySelector(".name").textContent = c.name;
     el.querySelector(".sub").textContent = c.username + "@" + c.host + ":" + c.port;
+    el.querySelectorAll(".ops button").forEach((btn) => {
+      btn.draggable = false;
+    });
     el.addEventListener("click", (e) => {
       if (e.target.closest(".ops")) return;
+      if (connDragged) {
+        connDragged = false;
+        return;
+      }
       selectConnection(c.id);
     });
+    el.querySelector('[data-act="copy"]').onclick = async (e) => {
+      e.stopPropagation();
+      const res = await api.duplicateConnection(c.id);
+      if (!res.ok) {
+        alert(res.error || "复制失败");
+        return;
+      }
+      await reloadConnections();
+      if (res.connection && res.connection.id) selectConnection(res.connection.id);
+      setStatus("已复制为「" + (res.connection && res.connection.name) + "」");
+    };
     el.querySelector('[data-act="edit"]').onclick = (e) => {
       e.stopPropagation();
       openDialog(c.id);
@@ -246,6 +269,51 @@ function paintConnections() {
       await reloadConnections();
       refreshToolbar();
     };
+    el.addEventListener("dragstart", (e) => {
+      if (e.target.closest(".ops")) {
+        e.preventDefault();
+        return;
+      }
+      dragConnId = c.id;
+      connDragged = false;
+      e.dataTransfer.setData("text/plain", c.id);
+      e.dataTransfer.effectAllowed = "move";
+      el.classList.add("dragging");
+    });
+    el.addEventListener("dragend", () => {
+      el.classList.remove("dragging");
+      ui.connList.querySelectorAll(".drop-before, .drop-after").forEach((n) => {
+        n.classList.remove("drop-before", "drop-after");
+      });
+      dragConnId = null;
+    });
+    el.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = el.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      el.classList.toggle("drop-before", before);
+      el.classList.toggle("drop-after", !before);
+    });
+    el.addEventListener("dragleave", () => {
+      el.classList.remove("drop-before", "drop-after");
+    });
+    el.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.classList.remove("drop-before", "drop-after");
+      const fromId = dragConnId || e.dataTransfer.getData("text/plain");
+      if (!fromId || fromId === c.id) return;
+      const ids = state.connections.map((x) => x.id).filter((id) => id !== fromId);
+      let i = ids.indexOf(c.id);
+      if (i < 0) return;
+      const rect = el.getBoundingClientRect();
+      if (e.clientY >= rect.top + rect.height / 2) i += 1;
+      ids.splice(i, 0, fromId);
+      connDragged = true;
+      await api.reorderConnections(ids);
+      await reloadConnections();
+    });
     ui.connList.appendChild(el);
   });
 }

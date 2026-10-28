@@ -54,6 +54,15 @@ function getConnection(id) {
   return loadConnections().find((c) => c.id === id) || null;
 }
 
+function uniqueCopyName(list, name) {
+  const base = String(name || "未命名主机").replace(/\s*副本(\s*\d+)?$/, "") + " 副本";
+  const names = new Set(list.map((c) => c.name));
+  if (!names.has(base)) return base;
+  let n = 2;
+  while (names.has(base + " " + n)) n += 1;
+  return base + " " + n;
+}
+
 function friendlyError(err) {
   const msg = String((err && err.message) || err || "未知错误");
   if (/authentication methods failed|All configured authentication/i.test(msg)) {
@@ -381,6 +390,34 @@ function registerSsh(app, opts = {}) {
     }
     saveConnections(list);
     return publicConnection(item);
+  });
+  ipcMain.handle("ssh:duplicate-connection", (_e, id) => {
+    const list = loadConnections();
+    const src = list.find((c) => c.id === id);
+    if (!src) return { ok: false, error: "连接不存在" };
+    const copy = {
+      ...JSON.parse(JSON.stringify(src)),
+      id: "s" + Date.now() + "-" + ++seq,
+      name: uniqueCopyName(list, src.name),
+    };
+    const idx = list.findIndex((c) => c.id === id);
+    list.splice(idx < 0 ? list.length : idx + 1, 0, copy);
+    saveConnections(list);
+    return { ok: true, connection: publicConnection(copy) };
+  });
+  ipcMain.handle("ssh:reorder-connections", (_e, ids) => {
+    const list = loadConnections();
+    const map = new Map(list.map((c) => [c.id, c]));
+    const ordered = [];
+    (ids || []).forEach((id) => {
+      if (map.has(id)) {
+        ordered.push(map.get(id));
+        map.delete(id);
+      }
+    });
+    map.forEach((c) => ordered.push(c));
+    saveConnections(ordered);
+    return { ok: true };
   });
   ipcMain.handle("ssh:delete-connection", (_e, id) => {
     destroySession(id);

@@ -41,6 +41,8 @@ const ui = {
   textView: document.getElementById("text-view"),
   hexView: document.getElementById("hex-view"),
   editor: document.getElementById("editor"),
+  editGutter: document.getElementById("edit-gutter"),
+  editGutterInner: document.getElementById("edit-gutter-inner"),
   textGutter: document.getElementById("text-gutter"),
   textBody: document.getElementById("text-body"),
   hexBody: document.getElementById("hex-body"),
@@ -184,6 +186,38 @@ function applyMeta(meta) {
 function applyWrap(on) {
   state.wrap = Boolean(on);
   ui.editor.wrap = state.wrap ? "soft" : "off";
+  paintEditGutter();
+}
+
+function countEditorLines(text) {
+  if (!text) return 1;
+  let n = 1;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) n += 1;
+  }
+  return n;
+}
+
+function paintEditGutter() {
+  const gutter = ui.editGutter;
+  const inner = ui.editGutterInner;
+  const ta = ui.editor;
+  if (!gutter || !inner || !ta) return;
+  if (ui.textEdit.classList.contains("hidden")) return;
+  const total = countEditorLines(ta.value);
+  const lh = state.rowHeight || 20;
+  const padTop = 8;
+  const scroll = ta.scrollTop;
+  const first = Math.max(0, Math.floor(Math.max(0, scroll - padTop) / lh));
+  const vis = Math.ceil((ta.clientHeight || 400) / lh) + 8;
+  const last = Math.min(total, first + vis);
+  const y = padTop + first * lh - scroll;
+  const digits = String(total).length;
+  gutter.style.width = Math.max(44, digits * 9 + 18) + "px";
+  inner.style.transform = "translateY(" + y + "px)";
+  let html = "";
+  for (let i = first; i < last; i++) html += "<div>" + (i + 1) + "</div>";
+  inner.innerHTML = html;
 }
 
 function showPanes() {
@@ -529,6 +563,7 @@ async function render() {
     await renderText();
   } else {
     updateEditStatus();
+    paintEditGutter();
   }
   updateThumb();
 }
@@ -597,8 +632,10 @@ function updateEditStatus() {
   const before = text.slice(0, pos);
   const line = before.split(/\n/).length;
   const col = pos - before.lastIndexOf("\n");
-  ui.stPos.textContent = "Ln " + line + ", Col " + col;
+  const total = countEditorLines(text);
+  ui.stPos.textContent = "Ln " + line + ", Col " + col + "  ·  " + total + " 行";
   ui.stOff.textContent = state.dirty ? "未保存" : "已保存";
+  paintEditGutter();
   if (state.meta) {
     const name = state.meta.title || (state.meta.untitled ? "未命名" : state.meta.path ? state.meta.path.split(/[\\/]/).pop() : "EditLong");
     document.title = (state.dirty ? "*" : "") + name + " - EditLong";
@@ -1061,6 +1098,7 @@ ui.editor.addEventListener("input", () => {
 });
 ui.editor.addEventListener("keyup", updateEditStatus);
 ui.editor.addEventListener("click", updateEditStatus);
+ui.editor.addEventListener("scroll", paintEditGutter);
 ui.findInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") runFind(Boolean(e.shiftKey));
   if (e.key === "Escape") showFind(false);
