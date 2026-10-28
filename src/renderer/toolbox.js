@@ -576,6 +576,178 @@ const tbx = (() => {
       setMsg(qrMsg, "", true);
     };
 
+    const videoAction = document.getElementById("tbx-video-action");
+    const videoPathEl = document.getElementById("tbx-video-path");
+    const audioPathEl = document.getElementById("tbx-audio-path");
+    const videoInfo = document.getElementById("tbx-video-info");
+    const videoMsg = document.getElementById("tbx-video-msg");
+    const videoRevealBtn = document.getElementById("tbx-video-reveal");
+    const videoAudioRow = document.getElementById("tbx-video-audio-row");
+    const videoQualityWrap = document.getElementById("tbx-video-quality-wrap");
+    const videoMixWrap = document.getElementById("tbx-video-mix-wrap");
+    const videoCopyWrap = document.getElementById("tbx-video-copy-wrap");
+    const videoFormatRow = document.getElementById("tbx-video-format-row");
+    let videoPath = "";
+    let audioPath = "";
+    let videoProbe = null;
+    let lastVideoOut = "";
+
+    function formatDuration(sec) {
+      if (sec == null || !Number.isFinite(sec)) return "未知";
+      const s = Math.max(0, Math.floor(sec));
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const r = s % 60;
+      if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+      return m + ":" + String(r).padStart(2, "0");
+    }
+
+    function formatBytes(n) {
+      n = Number(n) || 0;
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + " MB";
+      return (n / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    }
+
+    function refreshVideoInfo() {
+      if (!videoProbe || !videoProbe.ok) {
+        videoInfo.textContent = videoPath ? "已选择文件（未能解析媒体信息）" : "";
+        return;
+      }
+      const parts = [];
+      if (videoProbe.duration != null) parts.push("时长 " + formatDuration(videoProbe.duration));
+      if (videoProbe.width && videoProbe.height) parts.push(videoProbe.width + "×" + videoProbe.height);
+      if (videoProbe.videoCodec) parts.push("视频 " + videoProbe.videoCodec);
+      if (videoProbe.audioCodec) parts.push("音频 " + videoProbe.audioCodec);
+      else if (videoProbe.hasVideo && !videoProbe.hasAudio) parts.push("无音轨");
+      videoInfo.textContent = parts.join(" · ");
+    }
+
+    function syncVideoUi() {
+      const action = videoAction.value;
+      videoAudioRow.classList.toggle("hidden", action !== "mix");
+      videoQualityWrap.classList.toggle("hidden", action !== "compress");
+      videoMixWrap.classList.toggle("hidden", action !== "mix");
+      videoCopyWrap.classList.toggle("hidden", action !== "trim");
+      videoFormatRow.classList.toggle("hidden", action === "compress");
+      const formatEl = document.getElementById("tbx-video-format");
+      if (action === "mix" || action === "trim") {
+        // keep formats but prefer video containers
+        if (["mp3", "wav", "aac"].includes(formatEl.value) && action === "mix") {
+          formatEl.value = "mp4";
+        }
+      }
+    }
+
+    async function pickVideoFile() {
+      if (!window.editlong.videoPick) return;
+      const res = await window.editlong.videoPick("video");
+      if (!res || res.cancelled || !res.ok) return;
+      videoPath = res.path;
+      videoPathEl.value = videoPath;
+      videoProbe = res.probe || null;
+      lastVideoOut = "";
+      videoRevealBtn.disabled = true;
+      refreshVideoInfo();
+      setMsg(videoMsg, "已选择视频", true);
+    }
+
+    async function pickAudioFile() {
+      if (!window.editlong.videoPick) return;
+      const res = await window.editlong.videoPick("audio");
+      if (!res || res.cancelled || !res.ok) return;
+      audioPath = res.path;
+      audioPathEl.value = audioPath;
+      setMsg(videoMsg, "已选择音频", true);
+    }
+
+    function clearVideoForm() {
+      videoPath = "";
+      audioPath = "";
+      videoProbe = null;
+      lastVideoOut = "";
+      videoPathEl.value = "";
+      audioPathEl.value = "";
+      document.getElementById("tbx-video-start").value = "";
+      document.getElementById("tbx-video-end").value = "";
+      videoInfo.textContent = "";
+      videoRevealBtn.disabled = true;
+      setMsg(videoMsg, "", true);
+    }
+
+    async function runVideoEdit() {
+      if (!window.editlong.videoRun) {
+        setMsg(videoMsg, "当前版本不支持视频处理", false);
+        return;
+      }
+      if (!videoPath) {
+        setMsg(videoMsg, "请先选择视频文件", false);
+        return;
+      }
+      const action = videoAction.value;
+      if (action === "mix" && !audioPath) {
+        setMsg(videoMsg, "请选择要混合的音频文件", false);
+        return;
+      }
+      const payload = {
+        action,
+        inputPath: videoPath,
+        audioPath: action === "mix" ? audioPath : undefined,
+        start: document.getElementById("tbx-video-start").value.trim(),
+        end: document.getElementById("tbx-video-end").value.trim(),
+        format: document.getElementById("tbx-video-format").value,
+        quality: document.getElementById("tbx-video-quality").value,
+        mixMode: document.getElementById("tbx-video-mix-mode").value,
+        copyStreams: document.getElementById("tbx-video-copy").checked,
+      };
+      const runBtn = document.getElementById("tbx-video-run");
+      runBtn.disabled = true;
+      setMsg(videoMsg, "正在处理，请稍候…", true);
+      try {
+        const res = await window.editlong.videoRun(payload);
+        if (!res) {
+          setMsg(videoMsg, "处理失败", false);
+          return;
+        }
+        if (res.cancelled) {
+          setMsg(videoMsg, "已取消", true);
+          return;
+        }
+        if (!res.ok) {
+          setMsg(videoMsg, res.error || "处理失败", false);
+          return;
+        }
+        lastVideoOut = res.path || "";
+        videoRevealBtn.disabled = !lastVideoOut;
+        setMsg(
+          videoMsg,
+          "完成：" + lastVideoOut + (res.size != null ? "（" + formatBytes(res.size) + "）" : ""),
+          true,
+        );
+      } catch (err) {
+        setMsg(videoMsg, String(err.message || err), false);
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    videoAction.onchange = syncVideoUi;
+    document.getElementById("tbx-video-pick").onclick = pickVideoFile;
+    document.getElementById("tbx-audio-pick").onclick = pickAudioFile;
+    document.getElementById("tbx-video-run").onclick = runVideoEdit;
+    document.getElementById("tbx-video-clear").onclick = clearVideoForm;
+    document.getElementById("tbx-video-reveal").onclick = () => {
+      if (lastVideoOut && window.editlong.videoReveal) window.editlong.videoReveal(lastVideoOut);
+    };
+    const studioBtn = document.getElementById("tbx-video-studio");
+    if (studioBtn) {
+      studioBtn.onclick = () => {
+        if (window.editlong.openVideoEditor) window.editlong.openVideoEditor();
+      };
+    }
+    syncVideoUi();
+
     document.getElementById("btn-toolbox").onclick = () => show();
     window.addEventListener("editlong-toolbox", (e) => show(e.detail || undefined));
 

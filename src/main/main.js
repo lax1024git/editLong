@@ -7,6 +7,13 @@ const { registerToolboxIpc } = require("./toolbox");
 const { registerScreenshot } = require("./screenshot");
 const { registerRecorder } = require("./recorder");
 const { registerStorage } = require("./storage");
+const { registerSsh } = require("./ssh");
+const { registerHttp } = require("./http");
+const { registerVideoEditIpc } = require("./videoEdit");
+const {
+  registerVideoEditor,
+  registerMediaSchemePrivileged,
+} = require("./videoEditorWin");
 const {
   collectOpenPaths,
   registerContextMenu,
@@ -15,6 +22,9 @@ const {
 
 let screenshotApi = null;
 let storageApi = null;
+let sshApi = null;
+let httpApi = null;
+let videoEditorApi = null;
 
 /** @type {Map<string, { win: import("electron").BrowserWindow, ready: boolean }>} */
 const editorWindows = new Map();
@@ -28,6 +38,9 @@ let tabDragSession = null;
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
+} else {
+  // 必须在 app ready 之前注册自定义协议特权
+  registerMediaSchemePrivileged();
 }
 
 const LANGUAGES = [
@@ -331,8 +344,10 @@ function createEditorWindow(opts = {}) {
     editorWindows.delete(windowId);
     if (primaryWindowId === windowId) {
       primaryWindowId = editorWindows.keys().next().value || null;
-      if (storageApi && typeof storageApi.close === "function" && !primaryWindowId) {
-        storageApi.close();
+      if (!primaryWindowId) {
+        if (storageApi && typeof storageApi.close === "function") storageApi.close();
+        if (sshApi && typeof sshApi.close === "function") sshApi.close();
+        if (httpApi && typeof httpApi.close === "function") httpApi.close();
       }
     }
   });
@@ -712,10 +727,23 @@ function buildMenu() {
         { label: "图片", click: () => send("menu", "toolbox:image") },
         { label: "二维码", click: () => send("menu", "toolbox:qrcode") },
         { label: "加解密", click: () => send("menu", "toolbox:crypto") },
+        {
+          label: "视频剪辑",
+          click: () => videoEditorApi && videoEditorApi.open(),
+        },
+        { label: "视频工具（表单）", click: () => send("menu", "toolbox:video") },
         { type: "separator" },
         {
           label: "对象存储 (OSS/COS/BOS/S3/B2)",
           click: () => storageApi && storageApi.open(),
+        },
+        {
+          label: "远程连接 (SSH/SFTP)",
+          click: () => sshApi && sshApi.open(),
+        },
+        {
+          label: "HTTP 请求 (Postman)",
+          click: () => httpApi && httpApi.open(),
         },
         { type: "separator" },
         {
@@ -829,6 +857,9 @@ ipcMain.handle("file:offset-to-line", (e, offset) =>
   requireActiveFrom(e).session.offsetToLine(offset),
 );
 registerToolboxIpc(ipcMain, () => currentWindow());
+registerVideoEditIpc(ipcMain, () =>
+  (videoEditorApi && videoEditorApi.getWindow && videoEditorApi.getWindow()) || currentWindow(),
+);
 ipcMain.handle("file:new", (e) => newFile(windowIdFromEvent(e)));
 ipcMain.handle("file:close", (e, id) => closeTab(id, windowIdFromEvent(e)));
 ipcMain.handle("tabs:activate", (e, id) => activateTab(id, windowIdFromEvent(e)));
@@ -915,6 +946,9 @@ if (gotLock) {
     if (!shot.ok) screenshotApi.registerShortcut();
     registerRecorder(app, { pickRegion: () => screenshotApi.pickRegion() });
     storageApi = registerStorage(app, { getMainWindow: () => getPrimaryWindow() });
+    sshApi = registerSsh(app, { getMainWindow: () => getPrimaryWindow() });
+    httpApi = registerHttp(app, { getMainWindow: () => getPrimaryWindow() });
+    videoEditorApi = registerVideoEditor({ getMainWindow: () => getPrimaryWindow() });
     pendingOpenPaths.push(...collectOpenPaths(process.argv));
     createWindow();
     app.on("activate", () => {
@@ -924,12 +958,18 @@ if (gotLock) {
 
   app.on("window-all-closed", async () => {
     if (storageApi && typeof storageApi.close === "function") storageApi.close();
+    if (sshApi && typeof sshApi.close === "function") sshApi.close();
+    if (httpApi && typeof httpApi.close === "function") httpApi.close();
+    if (videoEditorApi && typeof videoEditorApi.close === "function") videoEditorApi.close();
     await workspace.closeAll();
     if (process.platform !== "darwin") app.quit();
   });
 
   app.on("before-quit", async () => {
     if (storageApi && typeof storageApi.close === "function") storageApi.close();
+    if (sshApi && typeof sshApi.close === "function") sshApi.close();
+    if (httpApi && typeof httpApi.close === "function") httpApi.close();
+    if (videoEditorApi && typeof videoEditorApi.close === "function") videoEditorApi.close();
     await workspace.closeAll();
   });
 }

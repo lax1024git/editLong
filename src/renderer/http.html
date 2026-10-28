@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>HTTP 请求 - EditLong</title>
+    <link rel="stylesheet" href="http.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="side-head">
+        <span>请求</span>
+        <button id="btn-new" type="button" title="新建请求">+</button>
+      </div>
+      <div id="req-list"></div>
+    </aside>
+
+    <main id="main">
+      <div class="req-name-row">
+        <label class="title-label">
+          标题
+          <input id="req-name" type="text" placeholder="自己起个名字，例如 登录接口" maxlength="80" />
+        </label>
+        <label class="check">
+          <input id="insecure" type="checkbox" /> 忽略证书错误
+        </label>
+        <span id="status-text"></span>
+      </div>
+      <header id="urlbar">
+        <select id="method">
+          <option>GET</option>
+          <option>POST</option>
+          <option>PUT</option>
+          <option>PATCH</option>
+          <option>DELETE</option>
+          <option>HEAD</option>
+          <option>OPTIONS</option>
+        </select>
+        <input id="url" type="text" placeholder="https://example.com/api" spellcheck="false" />
+        <button id="btn-send" class="primary" type="button">发送</button>
+        <button id="btn-save" type="button">保存</button>
+      </header>
+
+      <nav class="tabs" id="req-tabs">
+        <button class="tab active" type="button" data-tab="params">Query</button>
+        <button class="tab" type="button" data-tab="headers">请求头</button>
+        <button class="tab" type="button" data-tab="body">正文</button>
+        <button class="tab" type="button" data-tab="auth">认证</button>
+      </nav>
+
+      <section class="panel" data-panel="params">
+        <table class="kv">
+          <thead>
+            <tr>
+              <th class="col-on"></th>
+              <th>参数名</th>
+              <th>值</th>
+              <th class="col-del"></th>
+            </tr>
+          </thead>
+          <tbody id="params-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel hidden" data-panel="headers">
+        <table class="kv">
+          <thead>
+            <tr>
+              <th class="col-on"></th>
+              <th>请求头</th>
+              <th>值</th>
+              <th class="col-del"></th>
+            </tr>
+          </thead>
+          <tbody id="headers-body"></tbody>
+        </table>
+      </section>
+
+      <section class="panel hidden" data-panel="body">
+        <div class="body-type">
+          <label><input type="radio" name="body-type" value="none" checked /> 无</label>
+          <label><input type="radio" name="body-type" value="json" /> JSON</label>
+          <label><input type="radio" name="body-type" value="text" /> 文本</label>
+          <label><input type="radio" name="body-type" value="form" /> x-www-form-urlencoded（每行 key=value）</label>
+        </div>
+        <textarea id="body" spellcheck="false" placeholder="请求正文"></textarea>
+      </section>
+
+      <section class="panel hidden" data-panel="auth">
+        <label class="field">
+          类型
+          <select id="auth-type">
+            <option value="none">无</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="basic">Basic</option>
+          </select>
+        </label>
+        <label id="auth-token-row" class="field hidden">
+          Token
+          <input id="auth-token" type="text" autocomplete="off" />
+        </label>
+        <label id="auth-user-row" class="field hidden">
+          用户名
+          <input id="auth-user" type="text" autocomplete="off" />
+        </label>
+        <label id="auth-pass-row" class="field hidden">
+          密码
+          <input id="auth-pass" type="password" autocomplete="new-password" />
+        </label>
+      </section>
+
+      <div id="resp-head">
+        <span>响应</span>
+        <span id="resp-meta"></span>
+        <button id="btn-copy-body" type="button" disabled>复制正文</button>
+        <button id="btn-pretty" type="button" disabled>格式化 JSON</button>
+      </div>
+      <nav class="tabs" id="resp-tabs">
+        <button class="tab active" type="button" data-rtab="body">正文</button>
+        <button class="tab" type="button" data-rtab="headers">响应头</button>
+      </nav>
+      <pre id="resp-body" class="resp-view"></pre>
+      <div id="resp-headers" class="resp-view hidden"></div>
+    </main>
+
+    <script src="http.js"></script>
+  </body>
+</html>

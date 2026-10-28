@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>远程连接 SSH/SFTP - EditLong</title>
+    <link rel="stylesheet" href="vendor/xterm/xterm.css" />
+    <link rel="stylesheet" href="ssh.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="side-head">
+        <span>主机</span>
+        <button id="btn-add" type="button" title="新建连接">+</button>
+      </div>
+      <div id="conn-list"></div>
+    </aside>
+
+    <main id="main">
+      <header id="toolbar">
+        <button id="btn-connect" type="button" disabled>连接</button>
+        <button id="btn-disconnect" type="button" disabled>断开</button>
+        <span class="tb-split"></span>
+        <button class="view-tab active" type="button" data-view="term">终端</button>
+        <button class="view-tab" type="button" data-view="sftp">文件 SFTP</button>
+        <span id="status-text"></span>
+      </header>
+
+      <section id="pane-term" class="pane">
+        <div id="term-empty">请选择左侧主机并点击「连接」</div>
+        <div id="term" class="hidden"></div>
+      </section>
+
+      <section id="pane-sftp" class="pane hidden">
+        <div id="sftp-bar">
+          <button id="btn-refresh" type="button" disabled>刷新</button>
+          <button id="btn-up" type="button" disabled>上级</button>
+          <button id="btn-mkdir" type="button" disabled>新建文件夹</button>
+          <button id="btn-upload" type="button" disabled>上传</button>
+          <button id="btn-download" type="button" disabled>下载 / 另存</button>
+          <button id="btn-delete" type="button" disabled>删除</button>
+        </div>
+        <nav id="crumb"></nav>
+        <div id="drop-hint" class="hidden">松开以上传到当前目录</div>
+        <div id="browser">
+          <div id="empty">连接后可浏览远程文件</div>
+          <table id="file-table" class="hidden">
+            <thead>
+              <tr>
+                <th class="col-check"><input id="check-all" type="checkbox" /></th>
+                <th>名称</th>
+                <th class="col-size">大小</th>
+                <th class="col-time">修改时间</th>
+              </tr>
+            </thead>
+            <tbody id="file-body"></tbody>
+          </table>
+        </div>
+      </section>
+      <footer id="progress" class="hidden"></footer>
+    </main>
+
+    <div id="ctx-menu" class="hidden" role="menu">
+      <button type="button" data-action="rename" role="menuitem">重命名</button>
+      <button type="button" data-action="download" role="menuitem">下载 / 另存</button>
+      <button type="button" data-action="delete" class="danger" role="menuitem">删除</button>
+    </div>
+
+    <div id="term-ctx-menu" class="hidden" role="menu">
+      <button type="button" data-action="copy" role="menuitem">复制</button>
+      <button type="button" data-action="paste" role="menuitem">粘贴</button>
+    </div>
+
+    <div id="mkdir-overlay" class="hidden">
+      <div id="mkdir-dlg" role="dialog">
+        <h3 id="mkdir-title">新建文件夹</h3>
+        <label class="mkdir-label">
+          <span id="mkdir-label-text">文件夹名称</span>
+          <input id="mkdir-name" type="text" autocomplete="off" />
+        </label>
+        <div class="dlg-actions">
+          <button id="mkdir-ok" type="button">确定</button>
+          <button id="mkdir-cancel" type="button">取消</button>
+        </div>
+        <div id="mkdir-msg" class="msg"></div>
+      </div>
+    </div>
+
+    <div id="dlg-overlay" class="hidden">
+      <div id="dlg">
+        <h3 id="dlg-title">主机</h3>
+        <div class="form">
+          <label>名称 <input id="f-name" type="text" placeholder="我的服务器" /></label>
+          <label>主机 <input id="f-host" type="text" placeholder="192.168.1.10 或 example.com" /></label>
+          <label>端口 <input id="f-port" type="number" min="1" max="65535" value="22" /></label>
+          <label>用户名 <input id="f-user" type="text" autocomplete="off" /></label>
+          <label>
+            认证方式
+            <select id="f-auth">
+              <option value="password">密码</option>
+              <option value="key">私钥</option>
+            </select>
+          </label>
+          <label id="row-pass">密码 <input id="f-pass" type="password" autocomplete="new-password" /></label>
+          <label id="row-key" class="hidden">
+            私钥
+            <span class="key-row">
+              <input id="f-key" type="text" readonly placeholder="未选择" />
+              <button id="btn-pick-key" type="button">选择…</button>
+            </span>
+          </label>
+          <label id="row-phrase" class="hidden">私钥口令（可选） <input id="f-phrase" type="password" autocomplete="new-password" /></label>
+        </div>
+        <div class="dlg-actions">
+          <button id="dlg-test" type="button">测试连接</button>
+          <button id="dlg-save" type="button">保存</button>
+          <button id="dlg-cancel" type="button">取消</button>
+        </div>
+        <div id="dlg-msg" class="msg"></div>
+      </div>
+    </div>
+
+    <script src="vendor/xterm/xterm.js"></script>
+    <script src="vendor/xterm/addon-fit.js"></script>
+    <script src="ssh.js"></script>
+  </body>
+</html>

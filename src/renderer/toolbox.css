@@ -197,6 +197,24 @@
   color: #2e7d32;
 }
 
+.tbx-hint {
+  font-size: 12px;
+  color: #666;
+  min-height: 1.2em;
+  margin: 4px 0 8px;
+}
+
+.tbx-field .inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tbx-field .inline input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
 .crypto-grid {
   display: grid;
   grid-template-columns: 1fr 180px 1fr;

@@ -127,11 +127,31 @@
           <rect fill="#6d4c41" x="7.1" y="9" width="1.8" height="2.4" rx="0.4"/>
         </svg>
       </button>
+      <button id="btn-http" class="tb-btn" type="button" title="HTTP 请求">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect fill="#fff3e0" stroke="#ef6c00" x="1.5" y="2.5" width="13" height="11" rx="1"/>
+          <path fill="none" stroke="#ef6c00" d="M4 6.2h8M4 8.5h5.5M4 10.8h7"/>
+          <circle fill="#ef6c00" cx="12.2" cy="8.5" r="1.3"/>
+        </svg>
+      </button>
+      <button id="btn-ssh" class="tb-btn" type="button" title="远程连接 SSH/SFTP">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect fill="#263238" stroke="#26a69a" x="1.5" y="2.5" width="13" height="11" rx="1"/>
+          <path stroke="#80cbc4" d="M3.5 6.2h2.2M3.5 8.2h4.2M3.5 10.2h3"/>
+          <path fill="#26a69a" d="M10.2 7.2l3 1.7-3 1.7z"/>
+        </svg>
+      </button>
       <button id="btn-storage" class="tb-btn" type="button" title="对象存储 OSS/COS/BOS/S3/B2">
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <ellipse fill="#90caf9" stroke="#1565c0" cx="8" cy="4.2" rx="5.5" ry="2.2"/>
           <path fill="#e3f2fd" stroke="#1565c0" d="M2.5 4.2v3.6c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V4.2"/>
           <path fill="#bbdefb" stroke="#1565c0" d="M2.5 7.8v3.6c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V7.8"/>
+        </svg>
+      </button>
+      <button id="btn-video" class="tb-btn" type="button" title="视频剪辑">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect fill="#263238" stroke="#90a4ae" x="1.5" y="3.5" width="13" height="9" rx="1"/>
+          <path fill="#ff7043" d="M6.2 5.8l4.2 2.2-4.2 2.2z"/>
         </svg>
       </button>
       <button id="btn-record" class="tb-btn" type="button" title="区域录屏 (Ctrl+Shift+R)">
@@ -231,6 +251,7 @@
           <button class="tbx-tab" type="button" data-tab="image">图片</button>
           <button class="tbx-tab" type="button" data-tab="qrcode">二维码</button>
           <button class="tbx-tab" type="button" data-tab="crypto">加解密</button>
+          <button class="tbx-tab" type="button" data-tab="video">视频</button>
         </nav>
         <div class="tbx-body">
           <section class="tbx-page active" data-page="time">
@@ -410,6 +431,81 @@
               </div>
             </div>
             <div id="tbx-crypto-msg" class="tbx-msg"></div>
+          </section>
+
+          <section class="tbx-page" data-page="video">
+            <div class="tbx-row">
+              <label>操作
+                <select id="tbx-video-action">
+                  <option value="trim">裁剪视频</option>
+                  <option value="mix">混合 / 替换音频</option>
+                  <option value="convert">转换格式</option>
+                  <option value="compress">压缩视频</option>
+                </select>
+              </label>
+            </div>
+            <div class="tbx-field">
+              视频文件
+              <div class="inline">
+                <input id="tbx-video-path" type="text" readonly placeholder="未选择" />
+                <button id="tbx-video-pick" type="button">选择…</button>
+              </div>
+            </div>
+            <div id="tbx-video-audio-row" class="tbx-field hidden">
+              音频文件
+              <div class="inline">
+                <input id="tbx-audio-path" type="text" readonly placeholder="未选择" />
+                <button id="tbx-audio-pick" type="button">选择…</button>
+              </div>
+            </div>
+            <div id="tbx-video-info" class="tbx-hint"></div>
+            <div class="tbx-row">
+              <label>开始时间（秒或 mm:ss）
+                <input id="tbx-video-start" type="text" placeholder="0 或 0:00" />
+              </label>
+              <label>结束时间（留空到结尾）
+                <input id="tbx-video-end" type="text" placeholder="例如 1:30" />
+              </label>
+            </div>
+            <div id="tbx-video-format-row" class="tbx-row">
+              <label>输出格式
+                <select id="tbx-video-format">
+                  <option value="mp4">MP4</option>
+                  <option value="webm">WebM</option>
+                  <option value="mkv">MKV</option>
+                  <option value="mov">MOV</option>
+                  <option value="avi">AVI</option>
+                  <option value="mp3">MP3（仅音频）</option>
+                  <option value="wav">WAV（仅音频）</option>
+                  <option value="aac">AAC（仅音频）</option>
+                </select>
+              </label>
+              <label id="tbx-video-quality-wrap" class="hidden">压缩质量
+                <select id="tbx-video-quality">
+                  <option value="high">高质量（体积较大）</option>
+                  <option value="medium" selected>标准</option>
+                  <option value="low">较小体积</option>
+                  <option value="very-low">最小体积</option>
+                </select>
+              </label>
+              <label id="tbx-video-mix-wrap" class="hidden">音频处理
+                <select id="tbx-video-mix-mode">
+                  <option value="replace">替换原音轨</option>
+                  <option value="mix">与原音轨混合</option>
+                </select>
+              </label>
+            </div>
+            <label id="tbx-video-copy-wrap" class="inline">
+              <input id="tbx-video-copy" type="checkbox" checked />
+              裁剪时尽量无损复制流（更快；部分格式可能失败）
+            </label>
+            <div class="tbx-actions">
+              <button id="tbx-video-studio" type="button">打开可视化剪辑窗口</button>
+              <button id="tbx-video-run" type="button">开始处理</button>
+              <button id="tbx-video-reveal" type="button" disabled>打开所在文件夹</button>
+              <button id="tbx-video-clear" type="button">清空</button>
+            </div>
+            <div id="tbx-video-msg" class="tbx-msg"></div>
           </section>
         </div>
       </aside>

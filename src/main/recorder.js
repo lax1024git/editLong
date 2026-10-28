@@ -3,6 +3,7 @@ const { spawn, spawnSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { resolveFfmpeg } = require("./ffmpeg");
 
 let ffmpegProc = null;
 let tempFile = "";
@@ -19,19 +20,6 @@ let deviceCacheAt = 0;
 function even(n) {
   n = Math.max(2, Math.floor(n));
   return n % 2 === 0 ? n : n - 1;
-}
-
-function resolveFfmpeg() {
-  try {
-    let bin = require("ffmpeg-static");
-    if (bin && bin.includes("app.asar")) {
-      bin = bin.replace("app.asar", "app.asar.unpacked");
-    }
-    if (bin && fs.existsSync(bin)) return bin;
-  } catch {
-    /* ignore */
-  }
-  return "ffmpeg";
 }
 
 function loadAudioPrefs() {

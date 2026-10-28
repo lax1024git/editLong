@@ -104,8 +104,11 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",
     "@aws-sdk/lib-storage": "^3.1150.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "ffmpeg-static": "^5.3.0",
     "iconv-lite": "^0.6.3",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "ssh2": "^1.17.0"
   }
 }

@@ -261,11 +261,19 @@ body {
   display: flex;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
+}
+
+#text-edit {
+  min-height: 0;
 }
 
 #editor {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
   border: 0;
   resize: none;
   outline: none;
@@ -274,6 +282,7 @@ body {
   font-size: var(--editor-font-size);
   line-height: 1.5;
   white-space: pre;
+  overflow: auto;
 }
 
 .gutter {

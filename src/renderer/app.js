@@ -794,6 +794,60 @@ function showGoto(show) {
   }
 }
 
+function measureEditorCaret(ta, index) {
+  const style = window.getComputedStyle(ta);
+  const mirror = document.createElement("div");
+  mirror.style.cssText = [
+    "position:absolute",
+    "left:-99999px",
+    "top:0",
+    "visibility:hidden",
+    "pointer-events:none",
+    "white-space:" + style.whiteSpace,
+    "word-wrap:" + style.wordWrap,
+    "overflow-wrap:" + (style.overflowWrap || "normal"),
+    "font:" + style.font,
+    "letter-spacing:" + style.letterSpacing,
+    "padding:" + style.padding,
+    "border:" + style.border,
+    "box-sizing:border-box",
+    "width:" + ta.clientWidth + "px",
+    "line-height:" + style.lineHeight,
+    "tab-size:" + style.tabSize,
+  ].join(";");
+  const mark = document.createElement("span");
+  mark.textContent = ta.value.slice(index, index + 1) || "\u200b";
+  mirror.append(document.createTextNode(ta.value.slice(0, index)), mark);
+  document.body.appendChild(mirror);
+  const pos = {
+    top: mark.offsetTop,
+    left: mark.offsetLeft,
+    height: mark.offsetHeight || parseFloat(style.lineHeight) || state.rowHeight || 20,
+  };
+  document.body.removeChild(mirror);
+  return pos;
+}
+
+function scrollEditorToChar(index, length) {
+  const ta = ui.editor;
+  const max = ta.value.length;
+  const start = Math.max(0, Math.min(index, max));
+  const end = Math.max(start, Math.min(start + (length || 0), max));
+  ta.focus();
+  ta.setSelectionRange(start, end);
+  const pos = measureEditorCaret(ta, start);
+  const viewH = ta.clientHeight;
+  const viewW = ta.clientWidth;
+  const marginY = Math.min(Math.floor(viewH * 0.3), pos.height * 6);
+  const marginX = Math.min(80, Math.floor(viewW * 0.2));
+  if (pos.top < ta.scrollTop + marginY || pos.top + pos.height > ta.scrollTop + viewH - 8) {
+    ta.scrollTop = Math.max(0, pos.top - marginY);
+  }
+  if (pos.left < ta.scrollLeft + marginX || pos.left > ta.scrollLeft + viewW - marginX) {
+    ta.scrollLeft = Math.max(0, pos.left - marginX);
+  }
+}
+
 function findInEditor(query, reverse) {
   const text = ui.editor.value;
   const cs = ui.findCase.checked;
@@ -802,10 +856,12 @@ function findInEditor(query, reverse) {
   const from = reverse
     ? Math.max(0, (ui.editor.selectionStart || 0) - 1)
     : ui.editor.selectionEnd || 0;
-  const idx = reverse ? hay.lastIndexOf(needle, from) : hay.indexOf(needle, from);
+  let idx = reverse ? hay.lastIndexOf(needle, from) : hay.indexOf(needle, from);
+  if (idx < 0) {
+    idx = reverse ? hay.lastIndexOf(needle) : hay.indexOf(needle);
+  }
   if (idx < 0) return false;
-  ui.editor.focus();
-  ui.editor.setSelectionRange(idx, idx + query.length);
+  scrollEditorToChar(idx, query.length);
   const line = text.slice(0, idx).split(/\n/).length;
   ui.stFile.textContent = "找到 第 " + line + " 行";
   updateEditStatus();
@@ -856,18 +912,45 @@ async function runFind(reverse) {
 
 async function runGoto() {
   const raw = ui.gotoInput.value.trim();
-  if (!raw || !state.meta?.path) return;
+  if (!raw || !hasDoc()) return;
+  let line = 0;
   if (/^0x[0-9a-fA-F]+$/i.test(raw)) {
     const offset = parseInt(raw, 16);
-    if (state.mode === "hex") setIndex(Math.floor(offset / 16));
-    else {
-      const line = await api.offsetToLine(offset);
-      setIndex(line);
+    if (state.mode === "hex") {
+      setIndex(Math.floor(offset / 16));
+      showGoto(false);
+      await render();
+      return;
     }
+    if (state.meta.editable && state.mode === "text") {
+      scrollEditorToChar(Math.min(offset, ui.editor.value.length), 0);
+      showGoto(false);
+      updateEditStatus();
+      return;
+    }
+    line = await api.offsetToLine(offset);
   } else {
-    const line = Math.max(1, parseInt(raw, 10) || 1) - 1;
-    setIndex(line);
+    line = Math.max(1, parseInt(raw, 10) || 1) - 1;
   }
+  if (state.mode === "text" && state.meta.editable) {
+    const text = ui.editor.value;
+    let idx = 0;
+    let n = 0;
+    while (n < line && idx < text.length) {
+      const nl = text.indexOf("\n", idx);
+      if (nl < 0) {
+        idx = text.length;
+        break;
+      }
+      idx = nl + 1;
+      n += 1;
+    }
+    scrollEditorToChar(idx, 0);
+    showGoto(false);
+    updateEditStatus();
+    return;
+  }
+  setIndex(line);
   showGoto(false);
   await render();
 }
@@ -936,6 +1019,9 @@ document.getElementById("btn-goto").onclick = () => showGoto(true);
 document.getElementById("btn-snip").onclick = () => api.startSnip();
 document.getElementById("btn-record").onclick = () => api.startRecord();
 document.getElementById("btn-storage").onclick = () => api.openStorage && api.openStorage();
+document.getElementById("btn-ssh").onclick = () => api.openSsh && api.openSsh();
+document.getElementById("btn-http").onclick = () => api.openHttp && api.openHttp();
+document.getElementById("btn-video").onclick = () => api.openVideoEditor && api.openVideoEditor();
 
 function applyOnTopUi(on) {
   const btn = document.getElementById("btn-ontop");

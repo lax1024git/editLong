@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src 'self' editlong-media:; img-src 'self' editlong-media: data: blob:"
+    />
+    <title>视频剪辑 - EditLong</title>
+    <link rel="stylesheet" href="video.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <button id="btn-open-video" type="button">打开视频</button>
+      <button id="btn-open-audio" type="button">打开音频</button>
+      <span class="tb-split"></span>
+      <label>
+        操作
+        <select id="action">
+          <option value="trim">裁剪</option>
+          <option value="mix">混合 / 替换音频</option>
+          <option value="convert">转换格式</option>
+          <option value="compress">压缩</option>
+        </select>
+      </label>
+      <label id="format-wrap">
+        格式
+        <select id="format">
+          <option value="mp4">MP4</option>
+          <option value="webm">WebM</option>
+          <option value="mkv">MKV</option>
+          <option value="mov">MOV</option>
+          <option value="avi">AVI</option>
+          <option value="mp3">MP3</option>
+          <option value="wav">WAV</option>
+        </select>
+      </label>
+      <label id="quality-wrap" class="hidden">
+        压缩质量
+        <select id="quality">
+          <option value="high">高质量</option>
+          <option value="medium" selected>标准</option>
+          <option value="low">较小体积</option>
+          <option value="very-low">最小体积</option>
+        </select>
+      </label>
+      <label id="mix-wrap" class="hidden">
+        音频
+        <select id="mix-mode">
+          <option value="replace">替换原音轨</option>
+          <option value="mix">与原音轨混合</option>
+        </select>
+      </label>
+      <label id="copy-wrap" class="check">
+        <input id="copy-streams" type="checkbox" checked />
+        尽量无损裁剪
+      </label>
+      <span class="flex-spacer"></span>
+      <button id="btn-export" type="button" class="primary" disabled>导出</button>
+      <button id="btn-reveal" type="button" disabled>打开所在文件夹</button>
+    </header>
+
+    <main id="workspace">
+      <section id="preview-pane">
+        <div id="preview-stage">
+          <video id="player" playsinline preload="auto"></video>
+          <img id="preview-scrub" class="hidden" alt="" draggable="false" />
+          <div id="preview-empty">打开视频开始剪辑</div>
+        </div>
+        <div id="transport">
+          <button id="btn-play" type="button" disabled>播放</button>
+          <button id="btn-mark-in" type="button" disabled title="将入点设为当前时间">入点</button>
+          <button id="btn-mark-out" type="button" disabled title="将出点设为当前时间">出点</button>
+          <span class="tb-split"></span>
+          <button id="btn-split" type="button" disabled title="在播放头位置分割">分割</button>
+          <button id="btn-delete-clip" type="button" disabled title="删除选中的片段">删除片段</button>
+          <span id="timecode">00:00.0 / 00:00.0</span>
+          <span id="inout-label">入 00:00.0 · 出 00:00.0</span>
+          <span id="clips-label" class="muted">片段 1</span>
+          <span id="audio-label" class="muted"></span>
+        </div>
+      </section>
+
+      <section id="timeline-pane">
+        <div id="filmstrip" title="点击或拖动以定位；点击片段可选中">
+          <div id="filmstrip-frames"></div>
+          <div id="clips-layer"></div>
+          <div id="range-shade-left" class="range-shade"></div>
+          <div id="range-shade-right" class="range-shade"></div>
+          <div id="gap-shades"></div>
+          <div id="handle-in" class="handle in" title="入点"></div>
+          <div id="handle-out" class="handle out" title="出点"></div>
+          <div id="playhead" title="拖动播放头">
+            <div id="playhead-grip" aria-hidden="true"></div>
+          </div>
+          <div id="scrub-preview" class="hidden">
+            <img id="scrub-preview-img" alt="" draggable="false" />
+            <div id="scrub-preview-time">00:00.0</div>
+          </div>
+        </div>
+        <div id="timeline-meta">
+          <span>胶片预览 · 拖动黄色箭头定位 · 分割后可删除选中片段</span>
+          <span id="status-text" class="muted">未加载</span>
+        </div>
+        <div id="progress-bar" class="hidden">
+          <div id="progress-fill"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="video.js"></script>
+  </body>
+</html>
