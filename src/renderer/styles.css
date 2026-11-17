@@ -289,6 +289,7 @@ body {
   min-width: 0;
   min-height: 0;
   height: 100%;
+  width: 100%;
   border: 0;
   resize: none;
   outline: none;
@@ -297,7 +298,18 @@ body {
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
   white-space: pre;
-  overflow: auto;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  word-break: normal;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+#editor.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  overflow-x: hidden;
 }
 
 .gutter {
@@ -315,12 +327,20 @@ body {
 
 .body {
   flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
   padding: 8px 12px;
   white-space: pre;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#text-body > div {
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
 }
 
 .body.hex {

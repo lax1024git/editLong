@@ -186,6 +186,7 @@ function applyMeta(meta) {
 function applyWrap(on) {
   state.wrap = Boolean(on);
   ui.editor.wrap = state.wrap ? "soft" : "off";
+  ui.editor.classList.toggle("wrap", state.wrap);
   paintEditGutter();
 }
 
